@@ -3,18 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Katana Zero - Top Down Slasher</title>
+    <title>Katana Zero - Authentic Iai Slasher</title>
     <style>
-        :root {
-            --bg: #0a0a0a;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        :root { --bg: #0a0a0a; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             background: var(--bg);
             display: flex;
@@ -29,14 +21,12 @@
             -webkit-user-select: none;
             -webkit-tap-highlight-color: transparent;
         }
-
         canvas {
             display: block;
             border: 2px solid #1a1a1a;
             border-radius: 4px;
             box-shadow: 0 0 60px rgba(180, 30, 30, 0.3), 0 0 120px rgba(0, 0, 0, 0.8);
         }
-
         #ui-overlay {
             position: fixed;
             top: 20px;
@@ -48,53 +38,25 @@
             pointer-events: none;
             z-index: 10;
         }
-
         .ui-item {
             color: #ddd;
             font-size: 16px;
             letter-spacing: 2px;
-            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-            background: rgba(0, 0, 0, 0.6);
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+            background: rgba(0,0,0,0.6);
             padding: 8px 16px;
             border-radius: 4px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255,255,255,0.15);
         }
-
-        .ui-item.combo {
-            color: #ff6b6b;
-            font-weight: bold;
-            font-size: 20px;
-            text-shadow: 0 0 20px rgba(255, 100, 100, 0.8);
-            transition: all 0.1s ease;
-        }
-
-        .ui-item.dash {
-            color: #6bb5ff;
-        }
-
+        .ui-item.combo { color: #ff6b6b; font-weight: bold; font-size: 20px; text-shadow: 0 0 20px rgba(255,100,100,0.8); transition: all 0.1s ease; }
+        .ui-item.dash { color: #6bb5ff; }
         #instructions {
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #666;
-            font-size: 12px;
-            letter-spacing: 2px;
-            pointer-events: none;
-            text-align: center;
-            z-index: 10;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 10px 20px;
-            border-radius: 20px;
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            color: #666; font-size: 12px; letter-spacing: 2px; pointer-events: none;
+            text-align: center; z-index: 10; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 20px;
         }
-
-        #instructions span {
-            color: #aaa;
-        }
-        #instructions .key {
-            color: #fff;
-            font-weight: bold;
-        }
+        #instructions span { color: #aaa; }
+        #instructions .key { color: #fff; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -118,138 +80,83 @@
         (function() {
             const canvas = document.getElementById('game');
             const ctx = canvas.getContext('2d');
-
-            // --- UI Elements ---
             const scoreDisplay = document.getElementById('score-display');
             const comboDisplay = document.getElementById('combo-display');
             const dashDisplay = document.getElementById('dash-display');
             const hpDisplay = document.getElementById('hp-display');
             const waveDisplay = document.getElementById('wave-display');
 
-            // --- Canvas Setup ---
             let W, H;
-
             function resize() {
                 const maxW = Math.min(window.innerWidth - 20, 1000);
                 const maxH = Math.min(window.innerHeight - 20, 750);
-                W = Math.floor(maxW);
-                H = Math.floor(maxH);
-                canvas.width = W;
-                canvas.height = H;
+                W = Math.floor(maxW); H = Math.floor(maxH);
+                canvas.width = W; canvas.height = H;
             }
             resize();
             window.addEventListener('resize', resize);
 
-            // --- Audio System (synthesized sounds) ---
+            // Audio
             let audioCtx = null;
-
             function initAudio() {
-                if (!audioCtx) {
-                    audioCtx = new(window.AudioContext || window.webkitAudioContext)();
-                }
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 if (audioCtx.state === 'suspended') audioCtx.resume();
             }
-
             function playSynth(freq, type, duration, vol = 0.08, glideTo = null) {
                 if (!audioCtx) return;
                 try {
                     const t = audioCtx.currentTime;
                     const osc = audioCtx.createOscillator();
                     const gain = audioCtx.createGain();
-                    osc.type = type;
-                    osc.frequency.setValueAtTime(freq, t);
+                    osc.type = type; osc.frequency.setValueAtTime(freq, t);
                     if (glideTo) osc.frequency.linearRampToValueAtTime(glideTo, t + duration);
                     gain.gain.setValueAtTime(vol, t);
                     gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-                    osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start(t);
-                    osc.stop(t + duration);
-                } catch (e) {
-                    // Silently fail
-                }
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.start(t); osc.stop(t + duration);
+                } catch(e) {}
             }
+            function sfxSlash() { playSynth(300, 'sawtooth', 0.1, 0.06, 80); playSynth(600, 'triangle', 0.08, 0.06, 200); }
+            function sfxHit() { playSynth(100, 'square', 0.12, 0.08, 40); playSynth(50, 'sawtooth', 0.06, 0.06, 20); }
+            function sfxKill() { playSynth(500, 'sawtooth', 0.06, 0.1, 100); playSynth(800, 'triangle', 0.07, 0.08, 300); playSynth(60, 'square', 0.05, 0.15, 25); }
+            function sfxDash() { playSynth(200, 'sine', 0.15, 0.08, 600); playSynth(150, 'triangle', 0.05, 0.1, 50); }
+            function sfxComboReady() { playSynth(900, 'sine', 0.06, 0.06, 1200); playSynth(1100, 'triangle', 0.04, 0.05, 1400); }
 
-            function sfxSlash() { playSynth(300, 'sawtooth', 0.1, 0.06, 80);
-                playSynth(600, 'triangle', 0.08, 0.06, 200); }
-
-            function sfxHit() { playSynth(100, 'square', 0.12, 0.08, 40);
-                playSynth(50, 'sawtooth', 0.06, 0.06, 20); }
-
-            function sfxKill() { playSynth(500, 'sawtooth', 0.06, 0.1, 100);
-                playSynth(800, 'triangle', 0.07, 0.08, 300);
-                playSynth(60, 'square', 0.05, 0.15, 25); }
-
-            function sfxDash() { playSynth(200, 'sine', 0.15, 0.08, 600);
-                playSynth(150, 'triangle', 0.05, 0.1, 50); }
-
-            function sfxComboReady() { playSynth(900, 'sine', 0.06, 0.06, 1200);
-                playSynth(1100, 'triangle', 0.04, 0.05, 1400); }
-
-            // --- Input ---
+            // Input
             const keys = {};
-            let mouseX = W / 2,
-                mouseY = H / 2;
-            let mouseDown = false;
-            let rightMouseDown = false;
-            let mouseJustPressed = false;
-            let dashJustPressed = false;
+            let mouseX = W/2, mouseY = H/2;
+            let mouseDown = false, rightMouseDown = false;
+            let mouseJustPressed = false, dashJustPressed = false;
 
             window.addEventListener('keydown', e => {
                 keys[e.key.toLowerCase()] = true;
                 if (e.key.toLowerCase() === 'shift') {
                     e.preventDefault();
-                    if (!dashJustPressed && !keys['shift_was_down']) {
-                        dashJustPressed = true;
-                    }
+                    if (!dashJustPressed && !keys['shift_was_down']) dashJustPressed = true;
                     keys['shift_was_down'] = true;
                 }
             });
-            window.addEventListener('keyup', e => {
-                keys[e.key.toLowerCase()] = false;
-                if (e.key.toLowerCase() === 'shift') {
-                    keys['shift_was_down'] = false;
-                }
-            });
-
+            window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; if (e.key.toLowerCase() === 'shift') keys['shift_was_down'] = false; });
             canvas.addEventListener('mousemove', e => {
                 const rect = canvas.getBoundingClientRect();
                 mouseX = (e.clientX - rect.left) * (W / rect.width);
                 mouseY = (e.clientY - rect.top) * (H / rect.height);
             });
-
             canvas.addEventListener('mousedown', e => {
                 initAudio();
-                if (e.button === 0) {
-                    mouseJustPressed = true;
-                    mouseDown = true;
-                }
-                if (e.button === 2) {
-                    dashJustPressed = true;
-                    rightMouseDown = true;
-                }
+                if (e.button === 0) { mouseJustPressed = true; mouseDown = true; }
+                if (e.button === 2) { dashJustPressed = true; rightMouseDown = true; }
                 e.preventDefault();
             });
-            canvas.addEventListener('mouseup', e => {
-                if (e.button === 0) mouseDown = false;
-                if (e.button === 2) rightMouseDown = false;
-            });
+            canvas.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; if (e.button === 2) rightMouseDown = false; });
             canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-            // Touch support
             canvas.addEventListener('touchstart', e => {
-                initAudio();
-                e.preventDefault();
+                initAudio(); e.preventDefault();
                 const rect = canvas.getBoundingClientRect();
-                const tx = (e.touches[0].clientX - rect.left) * (W / rect.width);
-                const ty = (e.touches[0].clientY - rect.top) * (H / rect.height);
-                mouseX = tx;
-                mouseY = ty;
-                mouseJustPressed = true;
-                mouseDown = true;
-                if (e.touches.length >= 2) {
-                    dashJustPressed = true;
-                }
+                mouseX = (e.touches[0].clientX - rect.left) * (W / rect.width);
+                mouseY = (e.touches[0].clientY - rect.top) * (H / rect.height);
+                mouseJustPressed = true; mouseDown = true;
+                if (e.touches.length >= 2) dashJustPressed = true;
             });
             canvas.addEventListener('touchmove', e => {
                 e.preventDefault();
@@ -257,349 +164,247 @@
                 mouseX = (e.touches[0].clientX - rect.left) * (W / rect.width);
                 mouseY = (e.touches[0].clientY - rect.top) * (H / rect.height);
             });
-            canvas.addEventListener('touchend', e => {
-                mouseDown = false;
-                if (e.touches.length === 0) {
-                    mouseDown = false;
-                }
-            });
+            canvas.addEventListener('touchend', e => { mouseDown = false; });
 
-            // --- Particles ---
+            // Particles & effects
             const particles = [];
-            const trailPoints = []; // slash trail
-            const afterimages = []; // dash afterimages
+            const trailPoints = [];
+            const afterimages = [];
 
-            function spawnParticles(x, y, count, color, speed = 3, life = 0.4) {
-                for (let i = 0; i < count; i++) {
-                    const angle = Math.random() * Math.PI * 2;
-                    const spd = speed * (0.5 + Math.random());
-                    particles.push({
-                        x,
-                        y,
-                        vx: Math.cos(angle) * spd,
-                        vy: Math.sin(angle) * spd,
-                        life,
-                        maxLife: life,
-                        color,
-                        size: 1.5 + Math.random() * 3,
-                    });
+            function spawnParticles(x, y, count, color, speed=3, life=0.4) {
+                for (let i=0;i<count;i++) {
+                    const angle = Math.random()*Math.PI*2;
+                    const spd = speed*(0.5+Math.random());
+                    particles.push({x,y, vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, life, maxLife:life, color, size:1.5+Math.random()*3});
                 }
             }
 
-            function spawnSlashTrail(x, y, angle, length) {
-                const tipX = x + Math.cos(angle) * length;
-                const tipY = y + Math.sin(angle) * length;
-                trailPoints.push({
-                    x: tipX,
-                    y: tipY,
-                    life: 0.25,
-                    maxLife: 0.25,
-                });
+            function spawnSlashTrail(x, y) {
+                trailPoints.push({x, y, life:0.25, maxLife:0.25});
             }
 
             function addAfterimage(x, y, angle) {
-                afterimages.push({
-                    x,
-                    y,
-                    angle,
-                    life: 0.2,
-                    maxLife: 0.2,
-                });
+                afterimages.push({x, y, angle, life:0.2, maxLife:0.2});
             }
 
-            // --- Screen Shake ---
-            let shakeAmount = 0;
-            let shakeDuration = 0;
-            let shakeX = 0;
-            let shakeY = 0;
+            let shakeAmount=0, shakeDuration=0, shakeX=0, shakeY=0;
+            function triggerShake(amount=6, duration=0.15) { shakeAmount = Math.max(shakeAmount, amount); shakeDuration = Math.max(shakeDuration, duration); }
 
-            function triggerShake(amount = 6, duration = 0.15) {
-                shakeAmount = Math.max(shakeAmount, amount);
-                shakeDuration = Math.max(shakeDuration, duration);
-            }
-
-            // --- Player ---
+            // Player
             const player = {
-                x: W / 2,
-                y: H / 2,
-                radius: 16,
-                speed: 220,
-                vx: 0,
-                vy: 0,
-                aimAngle: 0,
+                x: W/2, y: H/2, radius: 16, speed: 220, vx:0, vy:0,
+                aimAngle: 0, bodyRotation: 0,
                 // Katana state
-                bladeLength: 48,
-                bladeCurve: 8, // curvature offset
-                slashState: 'idle', // 'idle' | 'windup' | 'active' | 'recovery'
-                slashTimer: 0,
-                slashDuration: 0,
-                slashStartAngle: 0,
-                slashEndAngle: 0,
-                slashArcCenter: 0,
-                slashDirection: 1, // 1 or -1 for alternating slashes
+                slashState: 'idle', slashTimer: 0, slashDuration: 0,
+                comboCount: 0, comboTimer: 0, comboWindow: 0.55,
                 slashHitEnemies: new Set(),
-                comboCount: 0,
-                comboTimer: 0,
-                comboWindow: 0.55,
                 // Dash
-                dashActive: false,
-                dashTimer: 0,
-                dashDuration: 0.13,
-                dashSpeed: 900,
-                dashDirX: 0,
-                dashDirY: 0,
-                dashCooldown: 0,
-                dashCooldownMax: 1.1,
-                dashAfterimageTimer: 0,
-                // Health
-                hp: 3,
-                maxHp: 3,
-                invulnTimer: 0,
-                invulnDuration: 1.2,
-                // Visual
-                bodyRotation: 0,
+                dashActive: false, dashTimer: 0, dashDuration: 0.13, dashSpeed: 900,
+                dashDirX:0, dashDirY:0, dashCooldown:0, dashCooldownMax:1.1,
+                hp: 3, maxHp: 3, invulnTimer: 0, invulnDuration: 1.2,
                 bladeGlow: 0,
+                // Sheath & sword positions
+                rightHandDist: 18,
+                sheathLeftDist: 14,
+                sheathBackDist: 6,
+                readyAngleOffset: 2.4, // ready angle behind right shoulder
+                endAngleOffset: -1.2,  // swing across to front
+                unsheatheProgress: 0,
             };
 
             function resetPlayer() {
-                player.x = W / 2;
-                player.y = H / 2;
+                player.x = W/2; player.y = H/2;
                 player.hp = player.maxHp;
                 player.slashState = 'idle';
-                player.dashActive = false;
-                player.dashCooldown = 0;
-                player.comboCount = 0;
-                player.comboTimer = 0;
-                player.invulnTimer = 1.5;
-                player.bladeGlow = 0;
+                player.dashActive = false; player.dashCooldown = 0;
+                player.comboCount = 0; player.comboTimer = 0;
+                player.invulnTimer = 1.5; player.bladeGlow = 0;
                 player.slashHitEnemies.clear();
-                player.vx = 0;
-                player.vy = 0;
-                player.bodyRotation = 0;
+                player.vx=0; player.vy=0; player.bodyRotation=0;
             }
 
-            // --- Enemies ---
+            // Enemies
             const enemies = [];
             const enemyTypes = [
-                { name: 'grunt', radius: 13, speed: 90, hp: 1, color: '#c0392b', score: 100 },
-                { name: 'runner', radius: 11, speed: 170, hp: 1, color: '#e74c3c', score: 150 },
-                { name: 'brute', radius: 20, speed: 55, hp: 3, color: '#8b0000', score: 400 },
+                { name:'grunt', radius:13, speed:90, hp:1, color:'#c0392b', score:100 },
+                { name:'runner', radius:11, speed:170, hp:1, color:'#e74c3c', score:150 },
+                { name:'brute', radius:20, speed:55, hp:3, color:'#8b0000', score:400 }
             ];
 
-            function spawnEnemy(typeIndex = null) {
-                if (typeIndex === null) {
-                    // Weighted random
+            function spawnEnemy(typeIndex=null) {
+                if (typeIndex===null) {
                     const roll = Math.random();
-                    if (roll < 0.6) typeIndex = 0; // grunt
-                    else if (roll < 0.9) typeIndex = 1; // runner
-                    else typeIndex = 2; // brute
+                    typeIndex = roll<0.6?0:(roll<0.9?1:2);
                 }
-                const type = enemyTypes[Math.min(typeIndex, enemyTypes.length - 1)];
-                // Spawn from edges
+                const type = enemyTypes[Math.min(typeIndex,2)];
                 let sx, sy;
-                const side = Math.floor(Math.random() * 4);
-                const margin = 40;
-                switch (side) {
-                    case 0:
-                        sx = -margin;
-                        sy = Math.random() * H;
-                        break;
-                    case 1:
-                        sx = W + margin;
-                        sy = Math.random() * H;
-                        break;
-                    case 2:
-                        sx = Math.random() * W;
-                        sy = -margin;
-                        break;
-                    case 3:
-                        sx = Math.random() * W;
-                        sy = H + margin;
-                        break;
+                const margin=40;
+                switch(Math.floor(Math.random()*4)) {
+                    case 0: sx=-margin; sy=Math.random()*H; break;
+                    case 1: sx=W+margin; sy=Math.random()*H; break;
+                    case 2: sx=Math.random()*W; sy=-margin; break;
+                    case 3: sx=Math.random()*W; sy=H+margin; break;
                 }
                 enemies.push({
-                    x: sx,
-                    y: sy,
-                    radius: type.radius,
-                    speed: type.speed * (0.85 + Math.random() * 0.3),
-                    hp: type.hp,
-                    maxHp: type.hp,
-                    color: type.color,
-                    score: type.score,
-                    name: type.name,
-                    hitFlash: 0,
-                    stunTimer: 0,
+                    x:sx, y:sy, radius:type.radius, speed:type.speed*(0.85+Math.random()*0.3),
+                    hp:type.hp, maxHp:type.hp, color:type.color, score:type.score,
+                    name:type.name, hitFlash:0, stunTimer:0, knockbackVx:0, knockbackVy:0
                 });
             }
 
-            // --- Wave System ---
-            let waveNumber = 1;
-            let enemiesRemaining = 0;
-            let waveActive = false;
-            let waveSpawnTimer = 0;
-            let waveSpawnInterval = 0.8;
-            let waveEnemiesToSpawn = 0;
-            let waveSpawnedCount = 0;
-            let waveDelay = 1.5;
+            let waveNumber=1, waveActive=false, waveSpawnTimer=0, waveSpawnInterval=0.8, waveEnemiesToSpawn=0, waveSpawnedCount=0;
+            let gameScore=0, gameOver=false, gameOverTimer=0;
 
             function startWave(num) {
-                waveNumber = num;
-                waveEnemiesToSpawn = 5 + num * 3;
-                waveSpawnedCount = 0;
-                enemiesRemaining = waveEnemiesToSpawn;
-                waveActive = true;
-                waveSpawnTimer = 0;
-                waveSpawnInterval = Math.max(0.25, 0.8 - num * 0.05);
-                // Add some existing enemies for higher waves
-                if (num > 2) {
-                    const preSpawn = Math.floor(num / 2);
-                    for (let i = 0; i < preSpawn; i++) {
-                        const typeIdx = num > 5 ? Math.floor(Math.random() * 3) : Math.floor(Math.random() *
-                            2);
-                        spawnEnemy(typeIdx);
-                        waveSpawnedCount++;
-                        enemiesRemaining = waveEnemiesToSpawn - waveSpawnedCount + preSpawn;
-                    }
-                    waveSpawnedCount = preSpawn;
-                    enemiesRemaining = waveEnemiesToSpawn;
-                }
+                waveNumber=num; waveEnemiesToSpawn=5+num*3; waveSpawnedCount=0;
+                waveActive=true; waveSpawnTimer=0; waveSpawnInterval=Math.max(0.25,0.8-num*0.05);
+                if(num>2){ for(let i=0;i<Math.floor(num/2);i++) spawnEnemy(num>5?Math.floor(Math.random()*3):Math.floor(Math.random()*2)); waveSpawnedCount=Math.floor(num/2); }
                 updateUI();
             }
 
             function updateUI() {
                 scoreDisplay.textContent = `SCORE: ${gameScore}`;
                 waveDisplay.textContent = `WAVE: ${waveNumber}`;
-                hpDisplay.textContent = `HP: ${'❤'.repeat(Math.max(0, player.hp))}${'🖤'.repeat(Math.max(0, player.maxHp - player.hp))}`;
-                if (player.comboCount >= 3) {
-                    comboDisplay.textContent = `COMBO x${player.comboCount}`;
-                    comboDisplay.style.opacity = '1';
-                } else if (player.comboCount > 0) {
-                    comboDisplay.textContent = `COMBO x${player.comboCount}`;
-                    comboDisplay.style.opacity = '0.7';
-                } else {
-                    comboDisplay.textContent = '';
-                    comboDisplay.style.opacity = '0';
-                }
-                const dashReady = player.dashCooldown <= 0 && !player.dashActive;
-                dashDisplay.textContent = dashReady ? 'DASH: READY' : 'DASH: CD';
-                dashDisplay.style.color = dashReady ? '#6bb5ff' : '#ff6b6b';
+                hpDisplay.textContent = `HP: ${'❤'.repeat(Math.max(0,player.hp))}${'🖤'.repeat(Math.max(0,player.maxHp-player.hp))}`;
+                if(player.comboCount>=3) comboDisplay.textContent=`COMBO x${player.comboCount}`;
+                else if(player.comboCount>0) comboDisplay.textContent=`COMBO x${player.comboCount}`;
+                else comboDisplay.textContent='';
+                const dashReady = player.dashCooldown<=0 && !player.dashActive;
+                dashDisplay.textContent = dashReady?'DASH: READY':'DASH: CD';
+                dashDisplay.style.color = dashReady?'#6bb5ff':'#ff6b6b';
             }
 
-            let gameScore = 0;
-            let gameOver = false;
-            let gameOverTimer = 0;
-
             function triggerGameOver() {
-                gameOver = true;
-                gameOverTimer = 0;
-                player.slashState = 'idle';
-                player.dashActive = false;
-                player.vx = 0;
-                player.vy = 0;
-                spawnParticles(player.x, player.y, 60, '#ff0000', 8, 0.8);
-                spawnParticles(player.x, player.y, 40, '#ffffff', 6, 0.5);
-                triggerShake(16, 0.5);
-                playSynth(40, 'sawtooth', 0.5, 0.1, 20);
+                gameOver=true; gameOverTimer=0;
+                player.slashState='idle'; player.dashActive=false; player.vx=0; player.vy=0;
+                spawnParticles(player.x,player.y,60,'#ff0000',8,0.8);
+                triggerShake(16,0.5); playSynth(40,'sawtooth',0.5,0.1,20);
             }
 
             function restartGame() {
-                gameScore = 0;
-                gameOver = false;
-                gameOverTimer = 0;
-                waveNumber = 1;
-                enemies.length = 0;
-                particles.length = 0;
-                trailPoints.length = 0;
-                afterimages.length = 0;
-                shakeAmount = 0;
-                shakeDuration = 0;
-                player.slashHitEnemies.clear();
-                resetPlayer();
-                startWave(1);
-                updateUI();
+                gameScore=0; gameOver=false; waveNumber=1;
+                enemies.length=0; particles.length=0; trailPoints.length=0; afterimages.length=0;
+                shakeAmount=0; shakeDuration=0; player.slashHitEnemies.clear();
+                resetPlayer(); startWave(1); updateUI();
             }
 
-            // --- Game Loop ---
+            // Helper: get right hand position relative to player
+            function getRightHandPos() {
+                const cos = Math.cos(player.aimAngle), sin = Math.sin(player.aimAngle);
+                return {
+                    x: player.x + sin * player.rightHandDist,
+                    y: player.y - cos * player.rightHandDist
+                };
+            }
+
+            // Helper: get sheath position (left hip)
+            function getSheathPos() {
+                const cos = Math.cos(player.aimAngle), sin = Math.sin(player.aimAngle);
+                return {
+                    x: player.x - sin * player.sheathLeftDist - cos * player.sheathBackDist,
+                    y: player.y + cos * player.sheathLeftDist - sin * player.sheathBackDist
+                };
+            }
+
+            // Get current sword transform (position, angle, whether sheathed)
+            function getSwordTransform() {
+                const sheathPos = getSheathPos();
+                const rightHand = getRightHandPos();
+                const sheathAngle = player.aimAngle + Math.PI + 0.25; // pointing back-left
+                const readyAngle = player.aimAngle + player.readyAngleOffset;
+                const endAngle = player.aimAngle + player.endAngleOffset;
+
+                if (player.slashState === 'idle') {
+                    return { x: sheathPos.x, y: sheathPos.y, angle: sheathAngle, sheathed: true };
+                }
+
+                const progress = 1 - (player.slashTimer / player.slashDuration);
+                if (player.slashState === 'windup') {
+                    const t = easeInQuad(progress);
+                    return {
+                        x: sheathPos.x + (rightHand.x - sheathPos.x) * t,
+                        y: sheathPos.y + (rightHand.y - sheathPos.y) * t,
+                        angle: sheathAngle + (readyAngle - sheathAngle) * t,
+                        sheathed: false
+                    };
+                } else if (player.slashState === 'active') {
+                    const t = easeOutQuad(progress);
+                    return {
+                        x: rightHand.x, y: rightHand.y,
+                        angle: readyAngle + (endAngle - readyAngle) * t,
+                        sheathed: false
+                    };
+                } else if (player.slashState === 'recovery') {
+                    const t = easeOutCubic(progress);
+                    return {
+                        x: rightHand.x + (sheathPos.x - rightHand.x) * t,
+                        y: rightHand.y + (sheathPos.y - rightHand.y) * t,
+                        angle: endAngle + (sheathAngle - endAngle) * t,
+                        sheathed: false
+                    };
+                }
+                return { x: sheathPos.x, y: sheathPos.y, angle: sheathAngle, sheathed: true };
+            }
+
+            // Line segment vs circle collision for sword hit
+            function checkSwordHitEnemy(enemy, swordBase, swordTip) {
+                const ex = enemy.x, ey = enemy.y, r = enemy.radius + 5; // blade thickness
+                const dx = swordTip.x - swordBase.x, dy = swordTip.y - swordBase.y;
+                const lenSq = dx*dx+dy*dy;
+                if (lenSq < 0.001) return Math.hypot(ex - swordBase.x, ey - swordBase.y) <= r;
+                let t = ((ex - swordBase.x)*dx + (ey - swordBase.y)*dy) / lenSq;
+                t = Math.max(0, Math.min(1, t));
+                const projX = swordBase.x + t*dx, projY = swordBase.y + t*dy;
+                return Math.hypot(ex - projX, ey - projY) <= r;
+            }
+
+            function initiateSlash() {
+                player.slashState = 'windup';
+                player.slashDuration = 0.12;
+                player.slashTimer = player.slashDuration;
+                player.slashHitEnemies.clear();
+                player.bladeGlow = 0.6;
+                player.comboCount = Math.min(5, player.comboCount + 1);
+                player.comboTimer = player.comboWindow;
+                if (player.comboCount >= 3) sfxComboReady();
+                sfxSlash();
+            }
+
+            // Update loop
             let lastTime = performance.now();
-
             function update(dt) {
-                // Clamp dt to avoid huge jumps
                 const clampedDt = Math.min(dt, 0.1);
-
                 if (gameOver) {
                     gameOverTimer += clampedDt;
-                    // Update particles
-                    updateParticles(clampedDt);
-                    updateTrails(clampedDt);
-                    updateAfterimages(clampedDt);
-                    updateShake(clampedDt);
-                    if (gameOverTimer > 2.5) {
-                        // Auto restart or show prompt
-                        if (keys['r'] || mouseJustPressed) {
-                            restartGame();
-                            mouseJustPressed = false;
-                        }
-                    }
-                    // Still update enemies slowly
-                    for (const enemy of enemies) {
-                        if (enemy.stunTimer > 0) enemy.stunTimer -= clampedDt;
-                        if (enemy.hitFlash > 0) enemy.hitFlash -= clampedDt;
-                    }
+                    updateParticles(clampedDt); updateTrails(clampedDt); updateAfterimages(clampedDt); updateShake(clampedDt);
+                    for (const enemy of enemies) { if(enemy.stunTimer>0) enemy.stunTimer-=clampedDt; if(enemy.hitFlash>0) enemy.hitFlash-=clampedDt; }
+                    if (gameOverTimer > 2.5 && (keys['r'] || mouseJustPressed)) { restartGame(); mouseJustPressed = false; }
                     return;
                 }
 
-                // Update timers
-                if (player.comboTimer > 0) {
-                    player.comboTimer -= clampedDt;
-                    if (player.comboTimer <= 0) {
-                        player.comboCount = 0;
-                        player.slashDirection = 1;
-                    }
-                }
+                if (player.comboTimer > 0) { player.comboTimer -= clampedDt; if (player.comboTimer <= 0) player.comboCount = 0; }
                 if (player.invulnTimer > 0) player.invulnTimer -= clampedDt;
                 if (player.dashCooldown > 0) player.dashCooldown -= clampedDt;
                 if (player.bladeGlow > 0) player.bladeGlow -= clampedDt * 3;
 
-                // --- Player Movement ---
-                let moveX = 0,
-                    moveY = 0;
-                if (keys['w'] || keys['arrowup']) moveY = -1;
-                if (keys['s'] || keys['arrowdown']) moveY = 1;
-                if (keys['a'] || keys['arrowleft']) moveX = -1;
-                if (keys['d'] || keys['arrowright']) moveX = 1;
+                let moveX=0, moveY=0;
+                if (keys['w']||keys['arrowup']) moveY=-1;
+                if (keys['s']||keys['arrowdown']) moveY=1;
+                if (keys['a']||keys['arrowleft']) moveX=-1;
+                if (keys['d']||keys['arrowright']) moveX=1;
+                const moveLen = Math.sqrt(moveX*moveX+moveY*moveY);
+                if (moveLen>1) { moveX/=moveLen; moveY/=moveLen; }
 
-                const moveLen = Math.sqrt(moveX * moveX + moveY * moveY);
-                if (moveLen > 1) {
-                    moveX /= moveLen;
-                    moveY /= moveLen;
-                }
+                player.aimAngle = Math.atan2(mouseY - player.y, mouseX - player.x);
 
-                // Aim angle towards mouse
-                const aimDx = mouseX - player.x;
-                const aimDy = mouseY - player.y;
-                player.aimAngle = Math.atan2(aimDy, aimDx);
-
-                // --- Dash ---
-                if (dashJustPressed && player.dashCooldown <= 0 && !player.dashActive && player.slashState ===
-                    'idle') {
-                    // Initiate dash
-                    player.dashActive = true;
-                    player.dashTimer = player.dashDuration;
-                    player.dashCooldown = player.dashCooldownMax;
-                    player.invulnTimer = Math.max(player.invulnTimer, player.dashDuration + 0.05);
-                    if (moveLen > 0.1) {
-                        player.dashDirX = moveX;
-                        player.dashDirY = moveY;
-                    } else {
-                        player.dashDirX = Math.cos(player.aimAngle);
-                        player.dashDirY = Math.sin(player.aimAngle);
-                    }
-                    player.dashAfterimageTimer = 0;
-                    sfxDash();
-                    spawnParticles(player.x, player.y, 12, '#88ccff', 4, 0.3);
-                    // Cancel current slash
-                    player.slashState = 'idle';
-                    player.slashHitEnemies.clear();
+                // Dash
+                if (dashJustPressed && player.dashCooldown<=0 && !player.dashActive && player.slashState==='idle') {
+                    player.dashActive=true; player.dashTimer=player.dashDuration; player.dashCooldown=player.dashCooldownMax;
+                    player.invulnTimer=Math.max(player.invulnTimer, player.dashDuration+0.05);
+                    if(moveLen>0.1){ player.dashDirX=moveX; player.dashDirY=moveY; }
+                    else { player.dashDirX=Math.cos(player.aimAngle); player.dashDirY=Math.sin(player.aimAngle); }
+                    sfxDash(); spawnParticles(player.x,player.y,12,'#88ccff',4,0.3);
+                    player.slashState='idle'; player.slashHitEnemies.clear();
                 }
                 dashJustPressed = false;
 
@@ -607,859 +412,299 @@
                     player.dashTimer -= clampedDt;
                     player.x += player.dashDirX * player.dashSpeed * clampedDt;
                     player.y += player.dashDirY * player.dashSpeed * clampedDt;
-                    // Afterimages
+                    if (player.dashAfterimageTimer <= 0) { player.dashAfterimageTimer = 0.025; addAfterimage(player.x, player.y, player.aimAngle); }
                     player.dashAfterimageTimer -= clampedDt;
-                    if (player.dashAfterimageTimer <= 0) {
-                        player.dashAfterimageTimer = 0.025;
-                        addAfterimage(player.x, player.y, player.aimAngle);
-                    }
-                    // Kill enemies on dash contact
                     for (const enemy of enemies) {
-                        const edx = enemy.x - player.x;
-                        const edy = enemy.y - player.y;
-                        const dist = Math.sqrt(edx * edx + edy * edy);
-                        if (dist < player.radius + enemy.radius + 10) {
-                            killEnemy(enemy);
-                            triggerShake(3, 0.08);
-                        }
+                        if (Math.hypot(enemy.x-player.x, enemy.y-player.y) < player.radius+enemy.radius+10) { killEnemy(enemy); triggerShake(3,0.08); }
                     }
-                    if (player.dashTimer <= 0) {
-                        player.dashActive = false;
-                        player.vx = player.dashDirX * 60;
-                        player.vy = player.dashDirY * 60;
-                    }
+                    if (player.dashTimer <= 0) { player.dashActive=false; player.vx=player.dashDirX*60; player.vy=player.dashDirY*60; }
                 } else {
-                    // Normal movement
-                    const spd = player.speed;
-                    player.vx = moveX * spd;
-                    player.vy = moveY * spd;
-                    player.x += player.vx * clampedDt;
-                    player.y += player.vy * clampedDt;
+                    player.vx = moveX * player.speed; player.vy = moveY * player.speed;
+                    player.x += player.vx * clampedDt; player.y += player.vy * clampedDt;
                 }
+                player.x = Math.max(player.radius, Math.min(W-player.radius, player.x));
+                player.y = Math.max(player.radius, Math.min(H-player.radius, player.y));
 
-                // Clamp player to arena
-                player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
-                player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
+                // Body rotation smoothing
+                let rotDiff = player.aimAngle - player.bodyRotation;
+                while(rotDiff>Math.PI) rotDiff-=Math.PI*2; while(rotDiff<-Math.PI) rotDiff+=Math.PI*2;
+                player.bodyRotation += rotDiff * Math.min(1, clampedDt*14);
 
-                // Smooth body rotation towards aim
-                const targetBodyRot = player.aimAngle;
-                let rotDiff = targetBodyRot - player.bodyRotation;
-                while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
-                while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
-                player.bodyRotation += rotDiff * Math.min(1, clampedDt * 14);
-
-                // --- Slash System ---
-                if (mouseJustPressed && player.slashState === 'idle' && !player.dashActive) {
-                    initiateSlash();
-                }
+                // Slash state machine
+                if (mouseJustPressed && player.slashState==='idle' && !player.dashActive) initiateSlash();
                 mouseJustPressed = false;
 
-                // Update slash state machine
                 if (player.slashState !== 'idle') {
                     player.slashTimer -= clampedDt;
-                    const progress = 1 - (player.slashTimer / player.slashDuration);
-
-                    if (player.slashState === 'windup') {
-                        if (player.slashTimer <= 0) {
-                            // Transition to active
-                            player.slashState = 'active';
-                            player.slashDuration = 0.07;
-                            player.slashTimer = player.slashDuration;
-                            player.slashHitEnemies.clear();
-                            player.bladeGlow = 1;
-                        }
+                    if (player.slashState === 'windup' && player.slashTimer <= 0) {
+                        player.slashState = 'active'; player.slashDuration = 0.1; player.slashTimer = player.slashDuration;
+                        player.slashHitEnemies.clear(); player.bladeGlow = 1;
                     } else if (player.slashState === 'active') {
-                        // Check for hits
-                        const currentAngle = getSlashAngle(progress);
-                        checkSlashHits(currentAngle);
-                        // Spawn trail
-                        spawnSlashTrail(player.x, player.y, currentAngle, player.bladeLength);
-                        if (player.slashTimer <= 0) {
-                            // Transition to recovery
-                            player.slashState = 'recovery';
-                            player.slashDuration = 0.18;
-                            player.slashTimer = player.slashDuration;
-                        }
-                    } else if (player.slashState === 'recovery') {
-                        if (player.slashTimer <= 0) {
-                            player.slashState = 'idle';
-                            player.slashHitEnemies.clear();
-                        }
-                    }
-                }
-
-                // --- Combo input buffering ---
-                if (mouseJustPressed && player.slashState === 'recovery' && player.slashTimer < 0.08 &&
-                    player.comboCount < 5) {
-                    // Buffer next slash
-                    initiateSlash();
-                }
-
-                // --- Enemy AI ---
-                for (const enemy of enemies) {
-                    if (enemy.stunTimer > 0) {
-                        enemy.stunTimer -= clampedDt;
-                        // Knockback decay
-                        enemy.x += (enemy.knockbackVx || 0) * clampedDt * 3;
-                        enemy.y += (enemy.knockbackVy || 0) * clampedDt * 3;
-                        if (enemy.knockbackVx) enemy.knockbackVx *= 0.9;
-                        if (enemy.knockbackVy) enemy.knockbackVy *= 0.9;
-                        continue;
-                    }
-                    const edx = player.x - enemy.x;
-                    const edy = player.y - enemy.y;
-                    const dist = Math.sqrt(edx * edx + edy * edy);
-                    if (dist > 0) {
-                        const nx = edx / dist;
-                        const ny = edy / dist;
-                        const spd = enemy.speed;
-                        enemy.x += nx * spd * clampedDt;
-                        enemy.y += ny * spd * clampedDt;
-                    }
-                    // Clamp enemies
-                    enemy.x = Math.max(-30, Math.min(W + 30, enemy.x));
-                    enemy.y = Math.max(-30, Math.min(H + 30, enemy.y));
-                    if (enemy.hitFlash > 0) enemy.hitFlash -= clampedDt;
-                }
-
-                // --- Collision: Enemy hits player ---
-                if (player.invulnTimer <= 0 && !player.dashActive && !gameOver) {
-                    for (const enemy of enemies) {
-                        const edx = player.x - enemy.x;
-                        const edy = player.y - enemy.y;
-                        const dist = Math.sqrt(edx * edx + edy * edy);
-                        if (dist < player.radius + enemy.radius) {
-                            // Player takes damage
-                            player.hp--;
-                            player.invulnTimer = player.invulnDuration;
-                            triggerShake(8, 0.2);
-                            spawnParticles(player.x, player.y, 20, '#ff4444', 5, 0.5);
-                            sfxHit();
-                            playSynth(80, 'square', 0.15, 0.06, 30);
-                            // Knockback player
-                            const knx = edx / (dist || 1);
-                            const kny = edy / (dist || 1);
-                            player.x -= knx * 40;
-                            player.y -= kny * 40;
-                            player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
-                            player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
-                            if (player.hp <= 0) {
-                                triggerGameOver();
+                        const sword = getSwordTransform();
+                        const tipX = sword.x + Math.cos(sword.angle) * 48;
+                        const tipY = sword.y + Math.sin(sword.angle) * 48;
+                        spawnSlashTrail(tipX, tipY);
+                        for (const enemy of enemies) {
+                            if (!player.slashHitEnemies.has(enemy) && enemy.hp>0 && checkSwordHitEnemy(enemy, sword, {x:tipX, y:tipY})) {
+                                player.slashHitEnemies.add(enemy);
+                                enemy.hp--; enemy.hitFlash=0.1; enemy.stunTimer=0.2;
+                                const angleToEnemy = Math.atan2(enemy.y-sword.y, enemy.x-sword.x);
+                                enemy.knockbackVx = Math.cos(angleToEnemy)*200;
+                                enemy.knockbackVy = Math.sin(angleToEnemy)*200;
+                                spawnParticles(enemy.x,enemy.y,8,'#ffaa00',4,0.3);
+                                triggerShake(2+player.comboCount,0.06);
+                                if (enemy.hp<=0) killEnemy(enemy); else sfxHit();
                             }
+                        }
+                        if (player.slashTimer <= 0) {
+                            player.slashState='recovery'; player.slashDuration=0.2; player.slashTimer=player.slashDuration;
+                        }
+                    } else if (player.slashState === 'recovery' && player.slashTimer <= 0) {
+                        player.slashState='idle'; player.slashHitEnemies.clear();
+                    }
+                }
+
+                // Enemy AI
+                for (const enemy of enemies) {
+                    if (enemy.stunTimer>0) { enemy.stunTimer-=clampedDt; enemy.x+=enemy.knockbackVx*clampedDt*3; enemy.y+=enemy.knockbackVy*clampedDt*3; enemy.knockbackVx*=0.9; enemy.knockbackVy*=0.9; continue; }
+                    const edx=player.x-enemy.x, edy=player.y-enemy.y, dist=Math.sqrt(edx*edx+edy*edy);
+                    if(dist>0){ enemy.x+= (edx/dist)*enemy.speed*clampedDt; enemy.y+= (edy/dist)*enemy.speed*clampedDt; }
+                    enemy.x=Math.max(-30,Math.min(W+30,enemy.x)); enemy.y=Math.max(-30,Math.min(H+30,enemy.y));
+                    if(enemy.hitFlash>0) enemy.hitFlash-=clampedDt;
+                }
+
+                // Player damage
+                if(player.invulnTimer<=0 && !player.dashActive && !gameOver){
+                    for(const enemy of enemies){
+                        if(Math.hypot(player.x-enemy.x, player.y-enemy.y) < player.radius+enemy.radius){
+                            player.hp--; player.invulnTimer=player.invulnDuration;
+                            triggerShake(8,0.2); spawnParticles(player.x,player.y,20,'#ff4444',5,0.5); sfxHit();
+                            if(player.hp<=0) triggerGameOver();
                             break;
                         }
                     }
                 }
 
-                // --- Wave Management ---
-                if (waveActive) {
-                    waveSpawnTimer -= clampedDt;
-                    if (waveSpawnTimer <= 0 && waveSpawnedCount < waveEnemiesToSpawn) {
-                        const typeIdx = waveNumber > 3 ? Math.floor(Math.random() * 3) : waveNumber > 1 ? Math.floor(
-                            Math.random() * 2) : 0;
-                        spawnEnemy(typeIdx);
-                        waveSpawnedCount++;
-                        waveSpawnTimer = waveSpawnInterval * (0.7 + Math.random() * 0.6);
+                // Wave management
+                if(waveActive){
+                    waveSpawnTimer-=clampedDt;
+                    if(waveSpawnTimer<=0 && waveSpawnedCount<waveEnemiesToSpawn){
+                        spawnEnemy(); waveSpawnedCount++; waveSpawnTimer=waveSpawnInterval*(0.7+Math.random()*0.6);
                     }
-                    // Check if wave is cleared
-                    const aliveEnemies = enemies.filter(e => e.hp > 0).length;
-                    const allSpawned = waveSpawnedCount >= waveEnemiesToSpawn;
-                    if (allSpawned && aliveEnemies === 0 && enemies.length === 0) {
-                        waveActive = false;
-                        waveDelay = 2.0;
-                        player.invulnTimer = Math.max(player.invulnTimer, 1.5);
-                        spawnParticles(player.x, player.y, 30, '#ffd700', 3, 0.6);
-                        sfxComboReady();
-                        // Start next wave after delay
-                        setTimeout(() => {
-                            if (!gameOver) {
-                                startWave(waveNumber + 1);
-                                updateUI();
-                            }
-                        }, waveDelay * 1000);
-                    }
-                    // Clean up dead enemies
-                    for (let i = enemies.length - 1; i >= 0; i--) {
-                        if (enemies[i].hp <= 0) {
-                            enemies.splice(i, 1);
-                        }
+                    if(waveSpawnedCount>=waveEnemiesToSpawn && enemies.filter(e=>e.hp>0).length===0){
+                        waveActive=false; player.invulnTimer=Math.max(player.invulnTimer,1.5);
+                        spawnParticles(player.x,player.y,30,'#ffd700',3,0.6); sfxComboReady();
+                        setTimeout(()=>{ if(!gameOver) startWave(waveNumber+1); }, 2000);
                     }
                 }
 
-                // --- Update particles ---
-                updateParticles(clampedDt);
-                updateTrails(clampedDt);
-                updateAfterimages(clampedDt);
-                updateShake(clampedDt);
+                updateParticles(clampedDt); updateTrails(clampedDt); updateAfterimages(clampedDt); updateShake(clampedDt);
                 updateUI();
-            }
-
-            function initiateSlash() {
-                player.slashState = 'windup';
-                player.slashDuration = 0.06;
-                player.slashTimer = player.slashDuration;
-                player.slashHitEnemies.clear();
-                // Determine slash arc
-                player.slashDirection *= -1; // Alternate
-                const baseAngle = player.aimAngle;
-                const arcSize = 2.5 + player.comboCount * 0.3; // Larger arcs for higher combos (radians ~143° to ~215°)
-                player.slashStartAngle = baseAngle - arcSize / 2 * player.slashDirection;
-                player.slashEndAngle = baseAngle + arcSize / 2 * player.slashDirection;
-                player.slashArcCenter = baseAngle;
-                // Combo
-                player.comboCount = Math.min(5, player.comboCount + 1);
-                player.comboTimer = player.comboWindow;
-                player.bladeGlow = 0.6;
-                if (player.comboCount >= 3) sfxComboReady();
-                sfxSlash();
-            }
-
-            function getSlashAngle(progress) {
-                if (player.slashState === 'windup') {
-                    // Pull back slightly
-                    const pullback = -0.35 * player.slashDirection;
-                    const eased = easeInQuad(progress);
-                    return player.slashArcCenter + pullback * eased;
-                } else if (player.slashState === 'active') {
-                    // Fast sweep
-                    const eased = easeOutQuad(progress);
-                    return player.slashStartAngle + (player.slashEndAngle - player.slashStartAngle) * eased;
-                } else if (player.slashState === 'recovery') {
-                    // Settle to aim angle
-                    const eased = easeOutCubic(progress);
-                    const activeEndAngle = player.slashEndAngle;
-                    return activeEndAngle + (player.aimAngle - activeEndAngle) * eased;
-                }
-                return player.aimAngle;
-            }
-
-            function checkSlashHits(currentAngle) {
-                const slashReach = player.bladeLength + 8;
-                for (const enemy of enemies) {
-                    if (player.slashHitEnemies.has(enemy)) continue;
-                    if (enemy.hp <= 0) continue;
-                    const edx = enemy.x - player.x;
-                    const edy = enemy.y - player.y;
-                    const dist = Math.sqrt(edx * edx + edy * edy);
-                    if (dist > slashReach + enemy.radius) continue;
-                    if (dist < player.radius - 5) continue;
-                    // Check if enemy is within the slash arc
-                    const angleToEnemy = Math.atan2(edy, edx);
-                    let angleDiff = angleToEnemy - currentAngle;
-                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                    const arcTolerance = 0.55 + player.comboCount * 0.08;
-                    if (Math.abs(angleDiff) < arcTolerance) {
-                        // Hit!
-                        player.slashHitEnemies.add(enemy);
-                        enemy.hp--;
-                        enemy.hitFlash = 0.1;
-                        enemy.stunTimer = 0.2;
-                        const knx = Math.cos(angleToEnemy) * 200;
-                        const kny = Math.sin(angleToEnemy) * 200;
-                        enemy.knockbackVx = knx;
-                        enemy.knockbackVy = kny;
-                        spawnParticles(enemy.x, enemy.y, 8, '#ffaa00', 4, 0.3);
-                        triggerShake(2 + player.comboCount, 0.06);
-                        if (enemy.hp <= 0) {
-                            killEnemy(enemy);
-                        } else {
-                            sfxHit();
-                        }
-                    }
-                }
             }
 
             function killEnemy(enemy) {
-                enemy.hp = 0;
-                const scoreBonus = player.comboCount * enemy.score;
-                gameScore += scoreBonus;
-                spawnParticles(enemy.x, enemy.y, 18 + player.comboCount * 4, enemy.color, 6, 0.5);
-                spawnParticles(enemy.x, enemy.y, 10, '#ffffff', 3, 0.25);
-                triggerShake(4 + player.comboCount, 0.12);
-                sfxKill();
-                // Score popup particle
-                particles.push({
-                    x: enemy.x,
-                    y: enemy.y,
-                    vx: (Math.random() - 0.5) * 20,
-                    vy: -40 - Math.random() * 30,
-                    life: 0.8,
-                    maxLife: 0.8,
-                    color: '#ffd700',
-                    size: 0,
-                    text: `+${scoreBonus}`,
-                    isText: true,
-                });
+                enemy.hp=0; gameScore+=player.comboCount*enemy.score;
+                spawnParticles(enemy.x,enemy.y,18+player.comboCount*4,enemy.color,6,0.5);
+                spawnParticles(enemy.x,enemy.y,10,'#ffffff',3,0.25);
+                triggerShake(4+player.comboCount,0.12); sfxKill();
+                particles.push({x:enemy.x,y:enemy.y, vx:(Math.random()-0.5)*20, vy:-40-Math.random()*30, life:0.8, maxLife:0.8, color:'#ffd700', size:0, text:`+${player.comboCount*enemy.score}`, isText:true});
             }
 
-            function updateParticles(dt) {
-                for (let i = particles.length - 1; i >= 0; i--) {
-                    const p = particles[i];
-                    p.life -= dt;
-                    if (p.life <= 0) {
-                        particles.splice(i, 1);
-                        continue;
-                    }
-                    p.x += p.vx * dt;
-                    p.y += p.vy * dt;
-                    if (!p.isText) {
-                        p.size *= 0.98;
-                    }
-                }
+            function updateParticles(dt){ for(let i=particles.length-1;i>=0;i--){ let p=particles[i]; p.life-=dt; if(p.life<=0) particles.splice(i,1); else{ p.x+=p.vx*dt; p.y+=p.vy*dt; if(!p.isText) p.size*=0.98; } } }
+            function updateTrails(dt){ for(let i=trailPoints.length-1;i>=0;i--){ trailPoints[i].life-=dt; if(trailPoints[i].life<=0) trailPoints.splice(i,1); } }
+            function updateAfterimages(dt){ for(let i=afterimages.length-1;i>=0;i--){ afterimages[i].life-=dt; if(afterimages[i].life<=0) afterimages.splice(i,1); } }
+            function updateShake(dt){ if(shakeDuration>0){ shakeDuration-=dt; let intensity=shakeAmount*(shakeDuration/0.15); shakeX=(Math.random()-0.5)*intensity*2; shakeY=(Math.random()-0.5)*intensity*2; if(shakeDuration<=0){ shakeX=0;shakeY=0;shakeAmount=0; } } }
+
+            function easeInQuad(t){ return t*t; }
+            function easeOutQuad(t){ return t*(2-t); }
+            function easeOutCubic(t){ return 1-Math.pow(1-t,3); }
+
+            // ---------- RENDERING ----------
+            function drawFloor(){
+                ctx.fillStyle='#1a1a1a'; ctx.fillRect(0,0,W,H);
+                ctx.strokeStyle='rgba(255,255,255,0.03)'; ctx.lineWidth=1;
+                for(let x=50;x<W;x+=50){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+                for(let y=50;y<H;y+=50){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
             }
 
-            function updateTrails(dt) {
-                for (let i = trailPoints.length - 1; i >= 0; i--) {
-                    trailPoints[i].life -= dt;
-                    if (trailPoints[i].life <= 0) {
-                        trailPoints.splice(i, 1);
-                    }
-                }
+            function drawSheath(px, py){
+                const sheathPos = getSheathPos();
+                const angle = player.aimAngle + Math.PI + 0.25; // matches sheathed angle
+                const len = 32, width = 6;
+                const cos = Math.cos(angle), sin = Math.sin(angle);
+                const startX = sheathPos.x - cos*len*0.4, startY = sheathPos.y - sin*len*0.4;
+                const endX = sheathPos.x + cos*len*0.6, endY = sheathPos.y + sin*len*0.6;
+                ctx.save();
+                ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = width+2; ctx.lineCap = 'round';
+                ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
+                ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = width;
+                ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
+                // Sheath opening
+                ctx.fillStyle = '#1a0a00';
+                ctx.beginPath(); ctx.arc(endX, endY, width/1.5, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
             }
 
-            function updateAfterimages(dt) {
-                for (let i = afterimages.length - 1; i >= 0; i--) {
-                    afterimages[i].life -= dt;
-                    if (afterimages[i].life <= 0) {
-                        afterimages.splice(i, 1);
-                    }
-                }
+            function drawPlayer(){
+                ctx.save();
+                const px = player.x + shakeX, py = player.y + shakeY;
+                if(player.invulnTimer>0 && Math.floor(player.invulnTimer*20)%2===0 && !player.dashActive) ctx.globalAlpha=0.4;
+
+                ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.arc(px+2,py+2,player.radius,0,Math.PI*2); ctx.fill();
+                const bodyGrad = ctx.createRadialGradient(px-3,py-3,player.radius*0.2,px,py,player.radius);
+                bodyGrad.addColorStop(0,'#e8e8e8'); bodyGrad.addColorStop(0.7,'#b0b0b0'); bodyGrad.addColorStop(1,'#606060');
+                ctx.fillStyle=bodyGrad; ctx.beginPath(); ctx.arc(px,py,player.radius,0,Math.PI*2); ctx.fill();
+                ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=1.5; ctx.stroke();
+                ctx.fillStyle='rgba(255,255,255,0.5)';
+                ctx.beginPath(); ctx.arc(px+Math.cos(player.bodyRotation)*player.radius*0.5, py+Math.sin(player.bodyRotation)*player.radius*0.5, player.radius*0.35,0,Math.PI*2); ctx.fill();
+
+                // Draw sheath on left hip
+                drawSheath(px, py);
+
+                ctx.restore();
             }
 
-            function updateShake(dt) {
-                if (shakeDuration > 0) {
-                    shakeDuration -= dt;
-                    const intensity = shakeAmount * (shakeDuration / Math.max(0.01, shakeDuration + 0.05));
-                    shakeX = (Math.random() - 0.5) * intensity * 2;
-                    shakeY = (Math.random() - 0.5) * intensity * 2;
-                    if (shakeDuration <= 0) {
-                        shakeX = 0;
-                        shakeY = 0;
-                        shakeAmount = 0;
-                    }
+            function drawSword(){
+                const sword = getSwordTransform();
+                const {x, y, angle, sheathed} = sword;
+                const bladeLen = 48, handleLen = 16;
+                const handleBaseX = x, handleBaseY = y;
+                const tipX = x + Math.cos(angle)*bladeLen, tipY = y + Math.sin(angle)*bladeLen;
+
+                ctx.save();
+                if (sheathed) {
+                    // Draw sheathed katana (handle and part of blade inside sheath)
+                    const handleEndX = x + Math.cos(angle)*handleLen*0.7;
+                    const handleEndY = y + Math.sin(angle)*handleLen*0.7;
+                    ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(handleEndX, handleEndY); ctx.stroke();
+                    ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill(); // tsuba hint
                 } else {
-                    shakeX = 0;
-                    shakeY = 0;
-                    shakeAmount = 0;
-                }
-            }
+                    // Draw unsheathed katana with full blade
+                    const perpAngle = angle + Math.PI/2;
+                    const baseLeftX = x + Math.cos(perpAngle)*2.5, baseLeftY = y + Math.sin(perpAngle)*2.5;
+                    const baseRightX = x - Math.cos(perpAngle)*2.5, baseRightY = y - Math.sin(perpAngle)*2.5;
+                    const tipLeftX = tipX + Math.cos(perpAngle)*0.8, tipLeftY = tipY + Math.sin(perpAngle)*0.8;
+                    const tipRightX = tipX - Math.cos(perpAngle)*0.8, tipRightY = tipY - Math.sin(perpAngle)*0.8;
+                    const curveX = -Math.sin(angle)*6, curveY = Math.cos(angle)*6;
+                    const midX = (x+tipX)/2 + curveX, midY = (y+tipY)/2 + curveY;
 
-            // --- Easing Functions ---
-            function easeInQuad(t) { return t * t; }
-
-            function easeOutQuad(t) { return t * (2 - t); }
-
-            function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
-
-            function easeOutElastic(t) {
-                if (t === 0 || t === 1) return t;
-                return Math.pow(2, -10 * t) * Math.sin((t - 1) * (2 * Math.PI) / 0.3) + 1;
-            }
-
-            // --- Rendering ---
-            function drawFloor() {
-                // Tatami-style floor
-                ctx.fillStyle = '#1a1a1a';
-                ctx.fillRect(0, 0, W, H);
-
-                // Subtle grid
-                ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-                ctx.lineWidth = 1;
-                const gridSize = 50;
-                for (let x = gridSize; x < W; x += gridSize) {
+                    const bladeGrad = ctx.createLinearGradient(x-Math.cos(perpAngle)*3, y-Math.sin(perpAngle)*3, x+Math.cos(perpAngle)*3, y+Math.sin(perpAngle)*3);
+                    bladeGrad.addColorStop(0,'#d0d0d0'); bladeGrad.addColorStop(0.3,'#f5f5f5'); bladeGrad.addColorStop(0.5,'#ffffff'); bladeGrad.addColorStop(0.7,'#e0e0e0'); bladeGrad.addColorStop(1,'#a0a0a0');
+                    ctx.fillStyle = bladeGrad;
+                    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.8;
                     ctx.beginPath();
-                    ctx.moveTo(x, 0);
-                    ctx.lineTo(x, H);
-                    ctx.stroke();
-                }
-                for (let y = gridSize; y < H; y += gridSize) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(W, y);
-                    ctx.stroke();
-                }
+                    ctx.moveTo(baseLeftX, baseLeftY);
+                    ctx.quadraticCurveTo(midX+Math.cos(perpAngle)*3, midY+Math.sin(perpAngle)*3, tipLeftX, tipLeftY);
+                    ctx.lineTo(tipRightX, tipRightY);
+                    ctx.quadraticCurveTo(midX-Math.cos(perpAngle)*3, midY-Math.sin(perpAngle)*3, baseRightX, baseRightY);
+                    ctx.closePath(); ctx.fill(); ctx.stroke();
 
-                // Subtle radial glow at center
-                const grad = ctx.createRadialGradient(W / 2, H / 2, W * 0.1, W / 2, H / 2, W * 0.7);
-                grad.addColorStop(0, 'rgba(30,30,30,0.4)');
-                grad.addColorStop(1, 'rgba(0,0,0,0)');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, W, H);
-            }
-
-            function drawPlayer() {
-                ctx.save();
-                const px = player.x + shakeX;
-                const py = player.y + shakeY;
-
-                // Invulnerability flicker
-                if (player.invulnTimer > 0 && Math.floor(player.invulnTimer * 20) % 2 === 0 && !player.dashActive) {
-                    ctx.globalAlpha = 0.4;
-                }
-
-                // Body shadow
-                ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                ctx.beginPath();
-                ctx.arc(px + 2, py + 2, player.radius, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Body
-                const bodyGrad = ctx.createRadialGradient(px - 3, py - 3, player.radius * 0.2, px, py, player.radius);
-                bodyGrad.addColorStop(0, '#e8e8e8');
-                bodyGrad.addColorStop(0.7, '#b0b0b0');
-                bodyGrad.addColorStop(1, '#606060');
-                ctx.fillStyle = bodyGrad;
-                ctx.beginPath();
-                ctx.arc(px, py, player.radius, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
-
-                // Direction indicator (subtle)
-                const indX = px + Math.cos(player.bodyRotation) * player.radius * 0.5;
-                const indY = py + Math.sin(player.bodyRotation) * player.radius * 0.5;
-                ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                ctx.beginPath();
-                ctx.arc(indX, indY, player.radius * 0.35, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Shoulders/arms hint
-                const shoulderLen = player.radius * 1.1;
-                const perpAngle = player.bodyRotation + Math.PI / 2;
-                for (let s = -1; s <= 1; s += 2) {
-                    const sx = px + Math.cos(player.bodyRotation + s * 0.7) * shoulderLen * 0.7;
-                    const sy = py + Math.sin(player.bodyRotation + s * 0.7) * shoulderLen * 0.7;
-                    ctx.fillStyle = 'rgba(200,200,200,0.6)';
-                    ctx.beginPath();
-                    ctx.arc(sx, sy, player.radius * 0.3, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-
-                ctx.restore();
-
-                // --- Draw Katana ---
-                drawKatana(px, py);
-            }
-
-            function drawKatana(px, py) {
-                ctx.save();
-
-                let bladeAngle;
-                let glowIntensity = player.bladeGlow;
-
-                if (player.slashState === 'idle') {
-                    bladeAngle = player.aimAngle;
-                } else {
-                    const progress = 1 - (player.slashTimer / player.slashDuration);
-                    bladeAngle = getSlashAngle(progress);
-                    if (player.slashState === 'active') {
-                        glowIntensity = 1;
-                    }
-                }
-
-                // The katana is held at the player's position
-                // Handle (tsuka) starts near the player body
-                const handleStartDist = player.radius * 0.5;
-                const handleLength = 16;
-                const bladeStartDist = handleStartDist + handleLength;
-                const bladeTotalLength = player.bladeLength;
-                const bladeTipDist = bladeStartDist + bladeTotalLength;
-
-                const handleStartX = px + Math.cos(bladeAngle) * handleStartDist;
-                const handleStartY = py + Math.sin(bladeAngle) * handleStartDist;
-                const bladeStartX = px + Math.cos(bladeAngle) * bladeStartDist;
-                const bladeStartY = py + Math.sin(bladeAngle) * bladeStartDist;
-                const bladeTipX = px + Math.cos(bladeAngle) * bladeTipDist;
-                const bladeTipY = py + Math.sin(bladeAngle) * bladeTipDist;
-
-                // --- Draw blade glow (during active slash) ---
-                if (glowIntensity > 0.01) {
-                    ctx.save();
-                    const glowAlpha = glowIntensity * 0.7;
-                    ctx.strokeStyle = `rgba(200,220,255,${glowAlpha})`;
-                    ctx.lineWidth = 6 + glowIntensity * 8;
-                    ctx.lineCap = 'round';
-                    ctx.shadowColor = `rgba(180,210,255,${glowAlpha})`;
-                    ctx.shadowBlur = 15 + glowIntensity * 25;
-                    ctx.beginPath();
-                    ctx.moveTo(bladeStartX, bladeStartY);
-                    // Slight curve for the blade
-                    const perpX = -Math.sin(bladeAngle) * player.bladeCurve;
-                    const perpY = Math.cos(bladeAngle) * player.bladeCurve;
-                    const midX = (bladeStartX + bladeTipX) / 2 + perpX;
-                    const midY = (bladeStartY + bladeTipY) / 2 + perpY;
-                    ctx.quadraticCurveTo(midX, midY, bladeTipX, bladeTipY);
-                    ctx.stroke();
-                    ctx.restore();
-                }
-
-                // --- Draw handle (tsuka) ---
-                const handleEndX = bladeStartX;
-                const handleEndY = bladeStartY;
-                ctx.strokeStyle = '#2a1a0a';
-                ctx.lineWidth = 5;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(handleStartX, handleStartY);
-                ctx.lineTo(handleEndX, handleEndY);
-                ctx.stroke();
-
-                // Handle wrapping (ito) - subtle lines
-                ctx.strokeStyle = '#1a0a00';
-                ctx.lineWidth = 6;
-                ctx.beginPath();
-                ctx.moveTo(handleStartX, handleStartY);
-                ctx.lineTo(handleEndX, handleEndY);
-                ctx.stroke();
-                ctx.strokeStyle = '#3d2a10';
-                ctx.lineWidth = 3.5;
-                ctx.beginPath();
-                ctx.moveTo(handleStartX, handleStartY);
-                ctx.lineTo(handleEndX, handleEndY);
-                ctx.stroke();
-
-                // Tsuba (guard) - small ellipse
-                const tsubaX = handleEndX;
-                const tsubaY = handleEndY;
-                ctx.fillStyle = '#1a1a1a';
-                ctx.strokeStyle = '#444';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                const tsubaPerpX = -Math.sin(bladeAngle) * 9;
-                const tsubaPerpY = Math.cos(bladeAngle) * 9;
-                ctx.ellipse(tsubaX, tsubaY, 9, 3.5, bladeAngle, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-
-                // --- Draw blade ---
-                // Katana blade with slight curve - drawn as a filled polygon
-                const bladeBaseWidth = 3.5;
-                const bladeTipWidth = 0.8;
-                const curveOffset = player.bladeCurve;
-
-                // Points for the blade polygon
-                const perpAngle = bladeAngle + Math.PI / 2;
-                const baseLeftX = bladeStartX + Math.cos(perpAngle) * bladeBaseWidth;
-                const baseLeftY = bladeStartY + Math.sin(perpAngle) * bladeBaseWidth;
-                const baseRightX = bladeStartX - Math.cos(perpAngle) * bladeBaseWidth;
-                const baseRightY = bladeStartY - Math.sin(perpAngle) * bladeBaseWidth;
-                const tipLeftX = bladeTipX + Math.cos(perpAngle) * bladeTipWidth;
-                const tipLeftY = bladeTipY + Math.sin(perpAngle) * bladeTipWidth;
-                const tipRightX = bladeTipX - Math.cos(perpAngle) * bladeTipWidth;
-                const tipRightY = bladeTipY - Math.sin(perpAngle) * bladeTipWidth;
-
-                // Apply curve (bend towards the back edge)
-                const curveX = -Math.sin(bladeAngle) * curveOffset;
-                const curveY = Math.cos(bladeAngle) * curveOffset;
-                const midCurveX = (bladeStartX + bladeTipX) / 2 + curveX;
-                const midCurveY = (bladeStartY + bladeTipY) / 2 + curveY;
-
-                // Blade gradient (metallic)
-                const bladeGrad = ctx.createLinearGradient(
-                    bladeStartX - Math.cos(perpAngle) * 4,
-                    bladeStartY - Math.sin(perpAngle) * 4,
-                    bladeStartX + Math.cos(perpAngle) * 4,
-                    bladeStartY + Math.sin(perpAngle) * 4
-                );
-                bladeGrad.addColorStop(0, '#d0d0d0');
-                bladeGrad.addColorStop(0.3, '#f5f5f5');
-                bladeGrad.addColorStop(0.5, '#ffffff');
-                bladeGrad.addColorStop(0.7, '#e0e0e0');
-                bladeGrad.addColorStop(1, '#a0a0a0');
-
-                ctx.fillStyle = bladeGrad;
-                ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-                ctx.lineWidth = 0.8;
-                ctx.beginPath();
-                ctx.moveTo(baseLeftX, baseLeftY);
-                ctx.quadraticCurveTo(midCurveX + Math.cos(perpAngle) * curveOffset * 0.3,
-                    midCurveY + Math.sin(perpAngle) * curveOffset * 0.3,
-                    tipLeftX, tipLeftY);
-                ctx.lineTo(tipRightX, tipRightY);
-                ctx.quadraticCurveTo(midCurveX - Math.cos(perpAngle) * curveOffset * 0.3,
-                    midCurveY - Math.sin(perpAngle) * curveOffset * 0.3,
-                    baseRightX, baseRightY);
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-
-                // Blade edge highlight (hamon line)
-                ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-                ctx.lineWidth = 0.6;
-                ctx.beginPath();
-                const hamonStartX = bladeStartX + Math.cos(perpAngle) * 1.5;
-                const hamonStartY = bladeStartY + Math.sin(perpAngle) * 1.5;
-                const hamonTipX = bladeTipX + Math.cos(perpAngle) * 0.3;
-                const hamonTipY = bladeTipY + Math.sin(perpAngle) * 0.3;
-                const hamonMidX = (hamonStartX + hamonTipX) / 2 + curveX * 0.6;
-                const hamonMidY = (hamonStartY + hamonTipY) / 2 + curveY * 0.6;
-                ctx.moveTo(hamonStartX, hamonStartY);
-                ctx.quadraticCurveTo(hamonMidX, hamonMidY, hamonTipX, hamonTipY);
-                ctx.stroke();
-
-                // Blade tip shine
-                ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                ctx.beginPath();
-                ctx.arc(bladeTipX, bladeTipY, 1.5, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.restore();
-            }
-
-            function drawSlashTrails() {
-                if (trailPoints.length < 2) return;
-                ctx.save();
-                for (let i = 1; i < trailPoints.length; i++) {
-                    const t0 = trailPoints[i - 1];
-                    const t1 = trailPoints[i];
-                    const alpha = (t1.life / t1.maxLife) * 0.7;
-                    const width = (t1.life / t1.maxLife) * 5 + 1;
-                    ctx.strokeStyle = `rgba(200,220,255,${alpha})`;
-                    ctx.lineWidth = width;
-                    ctx.lineCap = 'round';
-                    ctx.shadowColor = `rgba(180,210,255,${alpha})`;
-                    ctx.shadowBlur = 8;
-                    ctx.beginPath();
-                    ctx.moveTo(t0.x, t0.y);
-                    ctx.lineTo(t1.x, t1.y);
-                    ctx.stroke();
+                    // Handle
+                    ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 4.5;
+                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(angle)*handleLen, y - Math.sin(angle)*handleLen); ctx.stroke();
+                    ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill(); // tsuba
                 }
                 ctx.restore();
             }
 
-            function drawAfterimages() {
-                for (const ai of afterimages) {
-                    const alpha = (ai.life / ai.maxLife) * 0.35;
+            function drawEnemies(){
+                for(const enemy of enemies){
+                    if(enemy.hp<=0) continue;
                     ctx.save();
-                    ctx.globalAlpha = alpha;
-                    ctx.fillStyle = '#aaccff';
-                    ctx.beginPath();
-                    ctx.arc(ai.x + shakeX, ai.y + shakeY, player.radius * 0.9, 0, Math.PI * 2);
-                    ctx.fill();
-                    // Small blade hint
-                    const btx = ai.x + shakeX + Math.cos(ai.angle) * player.bladeLength;
-                    const bty = ai.y + shakeY + Math.sin(ai.angle) * player.bladeLength;
-                    ctx.strokeStyle = '#aaccff';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(ai.x + shakeX, ai.y + shakeY);
-                    ctx.lineTo(btx, bty);
-                    ctx.stroke();
-                    ctx.restore();
-                }
-            }
-
-            function drawEnemies() {
-                for (const enemy of enemies) {
-                    if (enemy.hp <= 0) continue;
-                    ctx.save();
-                    const ex = enemy.x + shakeX;
-                    const ey = enemy.y + shakeY;
-
-                    // Flash on hit
+                    const ex = enemy.x+shakeX, ey = enemy.y+shakeY;
                     let color = enemy.color;
-                    if (enemy.hitFlash > 0) {
-                        color = '#ffffff';
+                    if(enemy.hitFlash>0) color='#ffffff';
+                    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.arc(ex+2,ey+2,enemy.radius,0,Math.PI*2); ctx.fill();
+                    const grad = ctx.createRadialGradient(ex,ey,enemy.radius*0.2,ex,ey,enemy.radius);
+                    grad.addColorStop(0,color); grad.addColorStop(1,'#1a0000');
+                    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(ex,ey,enemy.radius,0,Math.PI*2); ctx.fill();
+                    ctx.strokeStyle='rgba(255,100,100,0.4)'; ctx.lineWidth=1.5; ctx.stroke();
+                    const angleToPlayer = Math.atan2(player.y-enemy.y, player.x-enemy.x);
+                    for(let s=-1;s<=1;s+=2){
+                        const eyeX = ex + Math.cos(angleToPlayer)*enemy.radius*0.4 + Math.cos(angleToPlayer+Math.PI/2)*s*enemy.radius*0.3;
+                        const eyeY = ey + Math.sin(angleToPlayer)*enemy.radius*0.4 + Math.sin(angleToPlayer+Math.PI/2)*s*enemy.radius*0.3;
+                        ctx.fillStyle='#ff3333'; ctx.shadowColor='#ff0000'; ctx.shadowBlur=6;
+                        ctx.beginPath(); ctx.arc(eyeX,eyeY,enemy.radius*0.25,0,Math.PI*2); ctx.fill();
+                        ctx.shadowBlur=0;
                     }
-
-                    // Shadow
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    ctx.beginPath();
-                    ctx.arc(ex + 2, ey + 2, enemy.radius, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    // Body
-                    const bodyGrad = ctx.createRadialGradient(ex, ey, enemy.radius * 0.2, ex, ey, enemy.radius);
-                    bodyGrad.addColorStop(0, color);
-                    bodyGrad.addColorStop(1, '#1a0000');
-                    ctx.fillStyle = bodyGrad;
-                    ctx.beginPath();
-                    ctx.arc(ex, ey, enemy.radius, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.strokeStyle = 'rgba(255,100,100,0.4)';
-                    ctx.lineWidth = 1.5;
-                    ctx.stroke();
-
-                    // Glowing eyes
-                    const eyeOffset = enemy.radius * 0.35;
-                    const angleToPlayer = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-                    for (let s = -1; s <= 1; s += 2) {
-                        const eyeX = ex + Math.cos(angleToPlayer) * eyeOffset + Math.cos(angleToPlayer + Math.PI / 2) *
-                            s * enemy.radius * 0.4;
-                        const eyeY = ey + Math.sin(angleToPlayer) * eyeOffset + Math.sin(angleToPlayer + Math.PI / 2) *
-                            s * enemy.radius * 0.4;
-                        ctx.fillStyle = '#ff3333';
-                        ctx.shadowColor = '#ff0000';
-                        ctx.shadowBlur = 6;
-                        ctx.beginPath();
-                        ctx.arc(eyeX, eyeY, enemy.radius * 0.25, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.shadowBlur = 0;
-                    }
-
-                    // HP indicator for brutes
-                    if (enemy.maxHp >= 3 && enemy.hp < enemy.maxHp) {
-                        const hpRatio = enemy.hp / enemy.maxHp;
-                        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                        ctx.fillRect(ex - enemy.radius, ey - enemy.radius - 10, enemy.radius * 2, 4);
-                        ctx.fillStyle = hpRatio > 0.5 ? '#ff6666' : '#ff0000';
-                        ctx.fillRect(ex - enemy.radius, ey - enemy.radius - 10, enemy.radius * 2 * hpRatio, 4);
-                    }
-
                     ctx.restore();
                 }
             }
 
-            function drawParticles() {
-                for (const p of particles) {
-                    const alpha = p.life / p.maxLife;
-                    if (p.isText) {
-                        ctx.fillStyle = `rgba(255,215,0,${alpha})`;
-                        ctx.font = 'bold 16px "Courier New", monospace';
-                        ctx.textAlign = 'center';
-                        ctx.fillText(p.text, p.x + shakeX, p.y + shakeY);
-                    } else {
-                        ctx.fillStyle = p.color.replace(')', `,${alpha})`).replace('rgb',
-                            'rgba');
-                        if (p.color.startsWith('#')) {
-                            const hex = p.color;
-                            const r = parseInt(hex.slice(1, 3), 16);
-                            const g = parseInt(hex.slice(3, 5), 16);
-                            const b = parseInt(hex.slice(5, 7), 16);
-                            ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
-                        }
-                        ctx.beginPath();
-                        ctx.arc(p.x + shakeX, p.y + shakeY, p.size, 0, Math.PI * 2);
-                        ctx.fill();
+            function drawTrails(){
+                if(trailPoints.length<2) return;
+                ctx.save();
+                for(let i=1;i<trailPoints.length;i++){
+                    const t0=trailPoints[i-1], t1=trailPoints[i];
+                    const alpha=(t1.life/t1.maxLife)*0.8;
+                    ctx.strokeStyle=`rgba(200,220,255,${alpha})`; ctx.lineWidth=(t1.life/t1.maxLife)*5+1;
+                    ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(t0.x,t0.y); ctx.lineTo(t1.x,t1.y); ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            function drawAfterimages(){
+                for(const ai of afterimages){
+                    const alpha=ai.life/ai.maxLife*0.35;
+                    ctx.save(); ctx.globalAlpha=alpha;
+                    ctx.fillStyle='#aaccff'; ctx.beginPath(); ctx.arc(ai.x+shakeX,ai.y+shakeY,player.radius*0.9,0,Math.PI*2); ctx.fill();
+                    ctx.restore();
+                }
+            }
+
+            function drawParticles(){
+                for(const p of particles){
+                    const alpha=p.life/p.maxLife;
+                    if(p.isText){
+                        ctx.fillStyle=`rgba(255,215,0,${alpha})`; ctx.font='bold 16px "Courier New"'; ctx.textAlign='center';
+                        ctx.fillText(p.text, p.x+shakeX, p.y+shakeY);
+                    }else{
+                        ctx.globalAlpha=alpha; ctx.fillStyle=p.color; ctx.beginPath();
+                        ctx.arc(p.x+shakeX, p.y+shakeY, p.size, 0, Math.PI*2); ctx.fill();
                     }
                 }
+                ctx.globalAlpha=1;
             }
 
-            function drawUI() {
-                // Crosshair
-                const crossSize = 12;
-                const crossGap = 7;
-                ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-                ctx.lineWidth = 1.5;
-                ctx.shadowColor = 'rgba(255,255,255,0.4)';
-                ctx.shadowBlur = 4;
-                ctx.beginPath();
-                ctx.moveTo(mouseX - crossSize, mouseY);
-                ctx.lineTo(mouseX - crossGap, mouseY);
-                ctx.moveTo(mouseX + crossGap, mouseY);
-                ctx.lineTo(mouseX + crossSize, mouseY);
-                ctx.moveTo(mouseX, mouseY - crossSize);
-                ctx.lineTo(mouseX, mouseY - crossGap);
-                ctx.moveTo(mouseX, mouseY + crossGap);
-                ctx.lineTo(mouseX, mouseY + crossSize);
-                ctx.stroke();
-                ctx.shadowBlur = 0;
-                ctx.beginPath();
-                ctx.arc(mouseX, mouseY, 3, 0, Math.PI * 2);
-                ctx.stroke();
-
-                // Dash cooldown ring around player
-                if (player.dashCooldown > 0 && !player.dashActive) {
-                    const cdRatio = player.dashCooldown / player.dashCooldownMax;
-                    ctx.strokeStyle = 'rgba(100,180,255,0.5)';
-                    ctx.lineWidth = 3;
-                    ctx.beginPath();
-                    ctx.arc(player.x + shakeX, player.y + shakeY, player.radius + 12, -Math.PI / 2, -Math.PI / 2 + Math.PI *
-                        2 * (1 - cdRatio));
-                    ctx.stroke();
-                }
-                if (player.dashCooldown <= 0 && !player.dashActive) {
-                    ctx.strokeStyle = 'rgba(100,200,255,0.3)';
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([4, 4]);
-                    ctx.beginPath();
-                    ctx.arc(player.x + shakeX, player.y + shakeY, player.radius + 12, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
-
-                // Game over screen
-                if (gameOver) {
-                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-                    ctx.fillRect(0, 0, W, H);
-                    ctx.fillStyle = '#ff2222';
-                    ctx.font = 'bold 48px "Courier New", monospace';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
-                    ctx.fillStyle = '#ffffff';
-                    ctx.font = '18px "Courier New", monospace';
-                    ctx.fillText(`Score: ${gameScore}  |  Wave: ${waveNumber}`, W / 2, H / 2 + 30);
-                    ctx.fillText('Click or press R to restart', W / 2, H / 2 + 60);
-                    ctx.textAlign = 'start';
-                }
-            }
-
-            function render() {
-                ctx.clearRect(0, 0, W, H);
+            function render(){
+                ctx.clearRect(0,0,W,H);
                 drawFloor();
                 drawAfterimages();
-                drawSlashTrails();
+                drawTrails();
                 drawEnemies();
                 drawParticles();
                 drawPlayer();
-                drawUI();
-
-                // Vignette
-                const vignetteGrad = ctx.createRadialGradient(W / 2, H / 2, W * 0.55, W / 2, H / 2, W * 0.85);
-                vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
-                vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
-                ctx.fillStyle = vignetteGrad;
-                ctx.fillRect(0, 0, W, H);
+                drawSword();
+                // Crosshair
+                ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1.5;
+                ctx.beginPath(); ctx.moveTo(mouseX-12,mouseY); ctx.lineTo(mouseX-7,mouseY); ctx.moveTo(mouseX+7,mouseY); ctx.lineTo(mouseX+12,mouseY);
+                ctx.moveTo(mouseX,mouseY-12); ctx.lineTo(mouseX,mouseY-7); ctx.moveTo(mouseX,mouseY+7); ctx.lineTo(mouseX,mouseY+12); ctx.stroke();
+                if(gameOver){
+                    ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(0,0,W,H);
+                    ctx.fillStyle='#ff2222'; ctx.font='bold 48px "Courier New"'; ctx.textAlign='center'; ctx.fillText('GAME OVER',W/2,H/2-20);
+                    ctx.fillStyle='#fff'; ctx.font='18px "Courier New"'; ctx.fillText(`Score: ${gameScore}  Wave: ${waveNumber}`,W/2,H/2+30);
+                    ctx.fillText('Click or press R to restart',W/2,H/2+60);
+                }
             }
 
-            function gameLoop(timestamp) {
-                let dt = (timestamp - lastTime) / 1000;
-                if (dt <= 0) dt = 0.016;
-                if (dt > 0.2) dt = 0.2; // Cap to prevent spiral
-                lastTime = timestamp;
-
-                update(dt);
-                render();
+            function gameLoop(timestamp){
+                let dt=(timestamp-lastTime)/1000;
+                if(dt<=0) dt=0.016; if(dt>0.2) dt=0.2;
+                lastTime=timestamp;
+                update(dt); render();
                 requestAnimationFrame(gameLoop);
             }
 
-            // --- Initialize ---
-            function init() {
-                resetPlayer();
-                player.x = W / 2;
-                player.y = H / 2;
-                gameScore = 0;
-                gameOver = false;
-                enemies.length = 0;
-                particles.length = 0;
-                trailPoints.length = 0;
-                afterimages.length = 0;
-                startWave(1);
-                updateUI();
+            function init(){
+                resetPlayer(); player.x=W/2; player.y=H/2;
+                gameScore=0; gameOver=false;
+                enemies.length=0; particles.length=0; trailPoints.length=0; afterimages.length=0;
+                startWave(1); updateUI();
             }
-
             init();
-
-            // Handle restart key
-            window.addEventListener('keydown', function restartHandler(e) {
-                if (e.key.toLowerCase() === 'r' && gameOver) {
-                    restartGame();
-                }
-            });
-
-            // Start game loop
+            window.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='r' && gameOver) restartGame(); });
             requestAnimationFrame(gameLoop);
-
-            console.log('%c⚔️ Katana Slasher Ready %c| %cWASD move | Mouse aim | Left Click slash | Right Click/Shift dash',
-                'font-size:18px;color:#ff4444;',
-                '',
-                'color:#aaa;');
-            console.log('%cChain slashes for combos! Slash trails show your blade path.',
-            'color:#ffd700;font-style:italic;');
-            console.log('%cAnimation principles sourced from katana combat studies & iaido techniques.',
-            'color:#888;font-size:10px;');
         })();
     </script>
 </body>
