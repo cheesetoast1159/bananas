@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Katana Zero - Authentic Iai Slasher</title>
+    <title>Katana Zero - Perfect Iai Slasher</title>
     <style>
         :root { --bg: #0a0a0a; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -194,8 +194,8 @@
                 rightHandDist: 18,
                 sheathLeftDist: 14,
                 sheathBackDist: 6,
-                readyAngleOffset: 2.4,
-                endAngleOffset: -1.2,
+                readyAngleOffset: 2.4,   // behind right shoulder
+                endAngleOffset: -1.2,    // across front
             };
 
             function resetPlayer() {
@@ -292,9 +292,8 @@
             }
 
             function getSheathEndPos() {
-                // Sheath tip (opening) is at upper end
                 const sheathPos = getSheathPos();
-                const angle = player.aimAngle + Math.PI + 0.25;
+                const angle = player.aimAngle + Math.PI + 0.25; // sheath orientation
                 const len = 32;
                 return {
                     x: sheathPos.x + Math.cos(angle) * len * 0.6,
@@ -302,18 +301,19 @@
                 };
             }
 
-            // Get sword transform with enhanced unsheathing: first slide out along sheath, then arc to ready
+            // Get sword transform with corrected draw direction (forward)
             function getSwordTransform() {
                 const sheathPos = getSheathPos();
                 const sheathEndPos = getSheathEndPos();
                 const rightHand = getRightHandPos();
-                const sheathAngle = player.aimAngle + Math.PI + 0.25; // direction blade points when sheathed
+                const sheathAngle = player.aimAngle + Math.PI + 0.25; // blade direction when sheathed (pointing back-left)
+                const drawDirectionAngle = player.aimAngle + 0.3; // forward direction (slightly right of aim)
                 const readyAngle = player.aimAngle + player.readyAngleOffset;
                 const endAngle = player.aimAngle + player.endAngleOffset;
-                const drawOutDistance = 40; // how far the blade/handle pulls out along sheath direction
+                const drawOutDistance = 44; // how far the blade/handle pulls out
 
                 if (player.slashState === 'idle') {
-                    // Sheathed: sword is at sheath position, angle is sheathAngle, but handle protrudes
+                    // Sheathed: handle protrudes from sheath end
                     return { x: sheathEndPos.x, y: sheathEndPos.y, angle: sheathAngle, sheathed: true };
                 }
 
@@ -321,24 +321,24 @@
                 const t = progress;
 
                 if (player.slashState === 'windup') {
-                    const pullOutPhase = 0.35; // first 35% of windup: draw straight out
+                    const pullOutPhase = 0.35;
                     if (t <= pullOutPhase) {
                         const localT = t / pullOutPhase;
                         const eased = easeOutQuad(localT);
-                        // Move from sheath end along sheath direction (backwards) by drawOutDistance
-                        const drawX = sheathEndPos.x + Math.cos(sheathAngle) * drawOutDistance * eased;
-                        const drawY = sheathEndPos.y + Math.sin(sheathAngle) * drawOutDistance * eased;
-                        const angle = sheathAngle; // keep pointing back during pull
+                        // Draw forward along drawDirectionAngle
+                        const drawX = sheathEndPos.x + Math.cos(drawDirectionAngle) * drawOutDistance * eased;
+                        const drawY = sheathEndPos.y + Math.sin(drawDirectionAngle) * drawOutDistance * eased;
+                        const angle = drawDirectionAngle; // point forward
                         return { x: drawX, y: drawY, angle: angle, sheathed: false };
                     } else {
                         const localT = (t - pullOutPhase) / (1 - pullOutPhase);
                         const eased = easeInQuad(localT);
-                        // From fully drawn position to ready position at right hand
-                        const startX = sheathEndPos.x + Math.cos(sheathAngle) * drawOutDistance;
-                        const startY = sheathEndPos.y + Math.sin(sheathAngle) * drawOutDistance;
+                        // Move from forward drawn position to right hand ready position
+                        const startX = sheathEndPos.x + Math.cos(drawDirectionAngle) * drawOutDistance;
+                        const startY = sheathEndPos.y + Math.sin(drawDirectionAngle) * drawOutDistance;
                         const interpX = startX + (rightHand.x - startX) * eased;
                         const interpY = startY + (rightHand.y - startY) * eased;
-                        const interpAngle = sheathAngle + (readyAngle - sheathAngle) * eased;
+                        const interpAngle = drawDirectionAngle + (readyAngle - drawDirectionAngle) * eased;
                         return { x: interpX, y: interpY, angle: interpAngle, sheathed: false };
                     }
                 } else if (player.slashState === 'active') {
@@ -358,9 +358,11 @@
                 return { x: sheathEndPos.x, y: sheathEndPos.y, angle: sheathAngle, sheathed: true };
             }
 
-            // Line-circle collision for sword hit
+            // Thick hitbox for slash (line with larger radius)
             function checkSwordHitEnemy(enemy, swordBase, swordTip) {
-                const ex = enemy.x, ey = enemy.y, r = enemy.radius + 5;
+                const ex = enemy.x, ey = enemy.y;
+                const hitboxThickness = 14; // thicker slash effect
+                const r = enemy.radius + hitboxThickness;
                 const dx = swordTip.x - swordBase.x, dy = swordTip.y - swordBase.y;
                 const lenSq = dx*dx+dy*dy;
                 if (lenSq < 0.001) return Math.hypot(ex - swordBase.x, ey - swordBase.y) <= r;
@@ -372,7 +374,7 @@
 
             function initiateSlash() {
                 player.slashState = 'windup';
-                player.slashDuration = 0.22; // slightly longer to show draw and swing
+                player.slashDuration = 0.22;
                 player.slashTimer = player.slashDuration;
                 player.slashHitEnemies.clear();
                 player.bladeGlow = 0.6;
@@ -550,7 +552,6 @@
                 ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
                 ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = width;
                 ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
-                // Sheath opening rim
                 ctx.fillStyle = '#1a0a00';
                 ctx.beginPath(); ctx.arc(endX, endY, width/1.5, 0, Math.PI*2); ctx.fill();
                 ctx.restore();
@@ -581,20 +582,16 @@
 
                 ctx.save();
                 if (sheathed) {
-                    // Sword is sheathed: handle protrudes from sheath end
                     const sheathEnd = getSheathEndPos();
                     const handleStartX = sheathEnd.x;
                     const handleStartY = sheathEnd.y;
                     const handleEndX = sheathEnd.x + Math.cos(angle) * handleLen;
                     const handleEndY = sheathEnd.y + Math.sin(angle) * handleLen;
-                    // Draw handle
                     ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
                     ctx.beginPath(); ctx.moveTo(handleStartX, handleStartY); ctx.lineTo(handleEndX, handleEndY); ctx.stroke();
-                    // Tsuba at sheath opening
                     ctx.fillStyle = '#1a1a1a';
                     ctx.beginPath(); ctx.arc(handleStartX, handleStartY, 3.5, 0, Math.PI*2); ctx.fill();
                 } else {
-                    // Unsheathed: draw full katana as before (thin curved rectangle)
                     const perpAngle = angle + Math.PI/2;
                     const baseWidth = 2.8, tipWidth = 0.7;
                     const edgeBaseX = x + Math.cos(perpAngle)*baseWidth, edgeBaseY = y + Math.sin(perpAngle)*baseWidth;
@@ -639,7 +636,6 @@
                     // Handle
                     ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 4.5;
                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(angle)*handleLen, y - Math.sin(angle)*handleLen); ctx.stroke();
-                    // Tsuba
                     ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill();
                 }
                 ctx.restore();
@@ -674,9 +670,14 @@
                 ctx.save();
                 for(let i=1;i<trailPoints.length;i++){
                     const t0=trailPoints[i-1], t1=trailPoints[i];
-                    const alpha=(t1.life/t1.maxLife)*0.8;
-                    ctx.strokeStyle=`rgba(200,220,255,${alpha})`; ctx.lineWidth=(t1.life/t1.maxLife)*5+1;
-                    ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(t0.x,t0.y); ctx.lineTo(t1.x,t1.y); ctx.stroke();
+                    const alpha=(t1.life/t1.maxLife)*0.9;
+                    // Thicker glowing trail
+                    ctx.strokeStyle=`rgba(200,220,255,${alpha})`; 
+                    ctx.lineWidth = (t1.life/t1.maxLife) * 14 + 2; // much thicker
+                    ctx.lineCap='round';
+                    ctx.shadowColor = `rgba(180,210,255,${alpha})`;
+                    ctx.shadowBlur = 12;
+                    ctx.beginPath(); ctx.moveTo(t0.x,t0.y); ctx.lineTo(t1.x,t1.y); ctx.stroke();
                 }
                 ctx.restore();
             }
