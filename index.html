@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Katana Zero - Authentic Iai Slasher</title>
+    <title>Katana Zero - Refined Iai Slasher</title>
     <style>
         :root { --bg: #0a0a0a; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -29,26 +29,16 @@
         }
         #ui-overlay {
             position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 30px;
-            align-items: center;
-            pointer-events: none;
-            z-index: 10;
+            top: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 30px; align-items: center; pointer-events: none; z-index: 10;
         }
         .ui-item {
-            color: #ddd;
-            font-size: 16px;
-            letter-spacing: 2px;
+            color: #ddd; font-size: 16px; letter-spacing: 2px;
             text-shadow: 0 0 10px rgba(255,255,255,0.5);
-            background: rgba(0,0,0,0.6);
-            padding: 8px 16px;
-            border-radius: 4px;
-            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(0,0,0,0.6); padding: 8px 16px;
+            border-radius: 4px; border: 1px solid rgba(255,255,255,0.15);
         }
-        .ui-item.combo { color: #ff6b6b; font-weight: bold; font-size: 20px; text-shadow: 0 0 20px rgba(255,100,100,0.8); transition: all 0.1s ease; }
+        .ui-item.combo { color: #ff6b6b; font-weight: bold; font-size: 20px; text-shadow: 0 0 20px rgba(255,100,100,0.8); }
         .ui-item.dash { color: #6bb5ff; }
         #instructions {
             position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
@@ -194,22 +184,18 @@
             const player = {
                 x: W/2, y: H/2, radius: 16, speed: 220, vx:0, vy:0,
                 aimAngle: 0, bodyRotation: 0,
-                // Katana state
                 slashState: 'idle', slashTimer: 0, slashDuration: 0,
                 comboCount: 0, comboTimer: 0, comboWindow: 0.55,
                 slashHitEnemies: new Set(),
-                // Dash
                 dashActive: false, dashTimer: 0, dashDuration: 0.13, dashSpeed: 900,
                 dashDirX:0, dashDirY:0, dashCooldown:0, dashCooldownMax:1.1,
                 hp: 3, maxHp: 3, invulnTimer: 0, invulnDuration: 1.2,
                 bladeGlow: 0,
-                // Sheath & sword positions
                 rightHandDist: 18,
                 sheathLeftDist: 14,
                 sheathBackDist: 6,
-                readyAngleOffset: 2.4, // ready angle behind right shoulder
-                endAngleOffset: -1.2,  // swing across to front
-                unsheatheProgress: 0,
+                readyAngleOffset: 2.4,   // behind right shoulder
+                endAngleOffset: -1.2,    // swing across front
             };
 
             function resetPlayer() {
@@ -288,7 +274,7 @@
                 resetPlayer(); startWave(1); updateUI();
             }
 
-            // Helper: get right hand position relative to player
+            // Helper positions
             function getRightHandPos() {
                 const cos = Math.cos(player.aimAngle), sin = Math.sin(player.aimAngle);
                 return {
@@ -297,7 +283,6 @@
                 };
             }
 
-            // Helper: get sheath position (left hip)
             function getSheathPos() {
                 const cos = Math.cos(player.aimAngle), sin = Math.sin(player.aimAngle);
                 return {
@@ -306,49 +291,70 @@
                 };
             }
 
-            // Get current sword transform (position, angle, whether sheathed)
+            // Get sword transform with enhanced unsheathing animation
             function getSwordTransform() {
                 const sheathPos = getSheathPos();
                 const rightHand = getRightHandPos();
                 const sheathAngle = player.aimAngle + Math.PI + 0.25; // pointing back-left
-                const readyAngle = player.aimAngle + player.readyAngleOffset;
-                const endAngle = player.aimAngle + player.endAngleOffset;
+                const readyAngle = player.aimAngle + player.readyAngleOffset; // behind right shoulder
+                const endAngle = player.aimAngle + player.endAngleOffset; // across front
 
                 if (player.slashState === 'idle') {
                     return { x: sheathPos.x, y: sheathPos.y, angle: sheathAngle, sheathed: true };
                 }
 
                 const progress = 1 - (player.slashTimer / player.slashDuration);
+                const t = progress;
+
                 if (player.slashState === 'windup') {
-                    const t = easeInQuad(progress);
-                    return {
-                        x: sheathPos.x + (rightHand.x - sheathPos.x) * t,
-                        y: sheathPos.y + (rightHand.y - sheathPos.y) * t,
-                        angle: sheathAngle + (readyAngle - sheathAngle) * t,
-                        sheathed: false
-                    };
+                    // Split unsheathing: first half pull up and away, second half set to ready position
+                    const midPoint = 0.6;
+                    let interpX, interpY, interpAngle;
+                    if (t <= midPoint) {
+                        // Pull up and away from sheath towards a high point above right shoulder
+                        const upDist = 30;
+                        const highPoint = {
+                            x: rightHand.x - Math.cos(player.aimAngle) * 10,
+                            y: rightHand.y - Math.sin(player.aimAngle) * 10 - upDist
+                        };
+                        const localT = t / midPoint;
+                        const eased = easeOutQuad(localT);
+                        interpX = sheathPos.x + (highPoint.x - sheathPos.x) * eased;
+                        interpY = sheathPos.y + (highPoint.y - sheathPos.y) * eased;
+                        interpAngle = sheathAngle + (readyAngle - 0.5 - sheathAngle) * eased; // angle points up-ish
+                    } else {
+                        // Move from high point to ready swing position
+                        const highPoint = {
+                            x: rightHand.x - Math.cos(player.aimAngle) * 10,
+                            y: rightHand.y - Math.sin(player.aimAngle) * 10 - 30
+                        };
+                        const localT = (t - midPoint) / (1 - midPoint);
+                        const eased = easeInQuad(localT);
+                        interpX = highPoint.x + (rightHand.x - highPoint.x) * eased;
+                        interpY = highPoint.y + (rightHand.y - highPoint.y) * eased;
+                        interpAngle = (readyAngle - 0.5) + (readyAngle - (readyAngle - 0.5)) * eased; // set to ready angle
+                    }
+                    return { x: interpX, y: interpY, angle: interpAngle, sheathed: false };
                 } else if (player.slashState === 'active') {
-                    const t = easeOutQuad(progress);
                     return {
                         x: rightHand.x, y: rightHand.y,
-                        angle: readyAngle + (endAngle - readyAngle) * t,
+                        angle: readyAngle + (endAngle - readyAngle) * easeOutQuad(t),
                         sheathed: false
                     };
                 } else if (player.slashState === 'recovery') {
-                    const t = easeOutCubic(progress);
                     return {
-                        x: rightHand.x + (sheathPos.x - rightHand.x) * t,
-                        y: rightHand.y + (sheathPos.y - rightHand.y) * t,
-                        angle: endAngle + (sheathAngle - endAngle) * t,
+                        x: rightHand.x + (sheathPos.x - rightHand.x) * easeOutCubic(t),
+                        y: rightHand.y + (sheathPos.y - rightHand.y) * easeOutCubic(t),
+                        angle: endAngle + (sheathAngle - endAngle) * easeOutCubic(t),
                         sheathed: false
                     };
                 }
                 return { x: sheathPos.x, y: sheathPos.y, angle: sheathAngle, sheathed: true };
             }
 
-            // Line segment vs circle collision for sword hit
+            // Line-circle collision for sword hit
             function checkSwordHitEnemy(enemy, swordBase, swordTip) {
-                const ex = enemy.x, ey = enemy.y, r = enemy.radius + 5; // blade thickness
+                const ex = enemy.x, ey = enemy.y, r = enemy.radius + 5;
                 const dx = swordTip.x - swordBase.x, dy = swordTip.y - swordBase.y;
                 const lenSq = dx*dx+dy*dy;
                 if (lenSq < 0.001) return Math.hypot(ex - swordBase.x, ey - swordBase.y) <= r;
@@ -360,7 +366,7 @@
 
             function initiateSlash() {
                 player.slashState = 'windup';
-                player.slashDuration = 0.12;
+                player.slashDuration = 0.18; // longer to accommodate distinct unsheathing
                 player.slashTimer = player.slashDuration;
                 player.slashHitEnemies.clear();
                 player.bladeGlow = 0.6;
@@ -425,7 +431,6 @@
                 player.x = Math.max(player.radius, Math.min(W-player.radius, player.x));
                 player.y = Math.max(player.radius, Math.min(H-player.radius, player.y));
 
-                // Body rotation smoothing
                 let rotDiff = player.aimAngle - player.bodyRotation;
                 while(rotDiff>Math.PI) rotDiff-=Math.PI*2; while(rotDiff<-Math.PI) rotDiff+=Math.PI*2;
                 player.bodyRotation += rotDiff * Math.min(1, clampedDt*14);
@@ -457,7 +462,7 @@
                             }
                         }
                         if (player.slashTimer <= 0) {
-                            player.slashState='recovery'; player.slashDuration=0.2; player.slashTimer=player.slashDuration;
+                            player.slashState='recovery'; player.slashDuration=0.25; player.slashTimer=player.slashDuration;
                         }
                     } else if (player.slashState === 'recovery' && player.slashTimer <= 0) {
                         player.slashState='idle'; player.slashHitEnemies.clear();
@@ -485,7 +490,7 @@
                     }
                 }
 
-                // Wave management
+                // Wave
                 if(waveActive){
                     waveSpawnTimer-=clampedDt;
                     if(waveSpawnTimer<=0 && waveSpawnedCount<waveEnemiesToSpawn){
@@ -529,7 +534,7 @@
 
             function drawSheath(px, py){
                 const sheathPos = getSheathPos();
-                const angle = player.aimAngle + Math.PI + 0.25; // matches sheathed angle
+                const angle = player.aimAngle + Math.PI + 0.25;
                 const len = 32, width = 6;
                 const cos = Math.cos(angle), sin = Math.sin(angle);
                 const startX = sheathPos.x - cos*len*0.4, startY = sheathPos.y - sin*len*0.4;
@@ -539,7 +544,6 @@
                 ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
                 ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = width;
                 ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
-                // Sheath opening
                 ctx.fillStyle = '#1a0a00';
                 ctx.beginPath(); ctx.arc(endX, endY, width/1.5, 0, Math.PI*2); ctx.fill();
                 ctx.restore();
@@ -558,9 +562,7 @@
                 ctx.fillStyle='rgba(255,255,255,0.5)';
                 ctx.beginPath(); ctx.arc(px+Math.cos(player.bodyRotation)*player.radius*0.5, py+Math.sin(player.bodyRotation)*player.radius*0.5, player.radius*0.35,0,Math.PI*2); ctx.fill();
 
-                // Draw sheath on left hip
                 drawSheath(px, py);
-
                 ctx.restore();
             }
 
@@ -568,42 +570,68 @@
                 const sword = getSwordTransform();
                 const {x, y, angle, sheathed} = sword;
                 const bladeLen = 48, handleLen = 16;
-                const handleBaseX = x, handleBaseY = y;
                 const tipX = x + Math.cos(angle)*bladeLen, tipY = y + Math.sin(angle)*bladeLen;
 
                 ctx.save();
                 if (sheathed) {
-                    // Draw sheathed katana (handle and part of blade inside sheath)
                     const handleEndX = x + Math.cos(angle)*handleLen*0.7;
                     const handleEndY = y + Math.sin(angle)*handleLen*0.7;
                     ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(handleEndX, handleEndY); ctx.stroke();
-                    ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill(); // tsuba hint
+                    ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
                 } else {
-                    // Draw unsheathed katana with full blade
                     const perpAngle = angle + Math.PI/2;
-                    const baseLeftX = x + Math.cos(perpAngle)*2.5, baseLeftY = y + Math.sin(perpAngle)*2.5;
-                    const baseRightX = x - Math.cos(perpAngle)*2.5, baseRightY = y - Math.sin(perpAngle)*2.5;
-                    const tipLeftX = tipX + Math.cos(perpAngle)*0.8, tipLeftY = tipY + Math.sin(perpAngle)*0.8;
-                    const tipRightX = tipX - Math.cos(perpAngle)*0.8, tipRightY = tipY - Math.sin(perpAngle)*0.8;
-                    const curveX = -Math.sin(angle)*6, curveY = Math.cos(angle)*6;
-                    const midX = (x+tipX)/2 + curveX, midY = (y+tipY)/2 + curveY;
+                    // Blade as thin curved rectangle: straight cutting edge, curved spine
+                    const baseWidth = 2.8, tipWidth = 0.7;
+                    // Cutting edge (front) is on one side, spine (back) curved on the other
+                    const edgeBaseX = x + Math.cos(perpAngle)*baseWidth, edgeBaseY = y + Math.sin(perpAngle)*baseWidth;
+                    const edgeTipX = tipX + Math.cos(perpAngle)*tipWidth, edgeTipY = tipY + Math.sin(perpAngle)*tipWidth;
+                    const spineBaseX = x - Math.cos(perpAngle)*baseWidth, spineBaseY = y - Math.sin(perpAngle)*baseWidth;
+                    const spineTipX = tipX - Math.cos(perpAngle)*tipWidth, spineTipY = tipY - Math.sin(perpAngle)*tipWidth;
 
-                    const bladeGrad = ctx.createLinearGradient(x-Math.cos(perpAngle)*3, y-Math.sin(perpAngle)*3, x+Math.cos(perpAngle)*3, y+Math.sin(perpAngle)*3);
-                    bladeGrad.addColorStop(0,'#d0d0d0'); bladeGrad.addColorStop(0.3,'#f5f5f5'); bladeGrad.addColorStop(0.5,'#ffffff'); bladeGrad.addColorStop(0.7,'#e0e0e0'); bladeGrad.addColorStop(1,'#a0a0a0');
+                    // Spine curve offset (towards the back of the blade, increasing sori)
+                    const curveOffset = 7;
+                    const spineMidX = (spineBaseX + spineTipX)/2 - Math.cos(angle)*curveOffset;
+                    const spineMidY = (spineBaseY + spineTipY)/2 - Math.sin(angle)*curveOffset;
+
+                    // Draw blade polygon: cutting edge (straight), spine (curved)
+                    const bladeGrad = ctx.createLinearGradient(
+                        x - Math.cos(perpAngle)*4, y - Math.sin(perpAngle)*4,
+                        x + Math.cos(perpAngle)*4, y + Math.sin(perpAngle)*4
+                    );
+                    bladeGrad.addColorStop(0,'#d0d0d0');
+                    bladeGrad.addColorStop(0.3,'#f5f5f5');
+                    bladeGrad.addColorStop(0.5,'#ffffff');
+                    bladeGrad.addColorStop(0.7,'#e0e0e0');
+                    bladeGrad.addColorStop(1,'#a0a0a0');
+
                     ctx.fillStyle = bladeGrad;
-                    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.8;
+                    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+                    ctx.lineWidth = 0.8;
                     ctx.beginPath();
-                    ctx.moveTo(baseLeftX, baseLeftY);
-                    ctx.quadraticCurveTo(midX+Math.cos(perpAngle)*3, midY+Math.sin(perpAngle)*3, tipLeftX, tipLeftY);
-                    ctx.lineTo(tipRightX, tipRightY);
-                    ctx.quadraticCurveTo(midX-Math.cos(perpAngle)*3, midY-Math.sin(perpAngle)*3, baseRightX, baseRightY);
-                    ctx.closePath(); ctx.fill(); ctx.stroke();
+                    ctx.moveTo(edgeBaseX, edgeBaseY);
+                    ctx.lineTo(edgeTipX, edgeTipY);
+                    // Spine curve
+                    ctx.quadraticCurveTo(spineMidX, spineMidY, spineBaseX, spineBaseY);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Hamon line (wavy edge on the cutting side)
+                    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+                    ctx.lineWidth = 0.5;
+                    ctx.beginPath();
+                    const hamonStartX = x + Math.cos(perpAngle)*1.2, hamonStartY = y + Math.sin(perpAngle)*1.2;
+                    const hamonEndX = tipX + Math.cos(perpAngle)*0.2, hamonEndY = tipY + Math.sin(perpAngle)*0.2;
+                    ctx.moveTo(hamonStartX, hamonStartY);
+                    ctx.lineTo(hamonEndX, hamonEndY);
+                    ctx.stroke();
 
                     // Handle
                     ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 4.5;
                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(angle)*handleLen, y - Math.sin(angle)*handleLen); ctx.stroke();
-                    ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill(); // tsuba
+                    // Tsuba
+                    ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill();
                 }
                 ctx.restore();
             }
