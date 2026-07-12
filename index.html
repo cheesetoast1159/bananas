@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Katana Zero - Perfect Iai Slasher</title>
+    <title>Katana Zero - Authentic Iai Slasher</title>
     <style>
         :root { --bg: #0a0a0a; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -274,7 +274,7 @@
                 resetPlayer(); startWave(1); updateUI();
             }
 
-            // Helper positions
+            // ---------- REVISED SHEATH & SWORD TRANSFORMS ----------
             function getRightHandPos() {
                 const cos = Math.cos(player.aimAngle), sin = Math.sin(player.aimAngle);
                 return {
@@ -283,7 +283,8 @@
                 };
             }
 
-            function getSheathPos() {
+            // Sheath base (back tip) on left hip
+            function getSheathBasePos() {
                 const cos = Math.cos(player.aimAngle), sin = Math.sin(player.aimAngle);
                 return {
                     x: player.x - sin * player.sheathLeftDist - cos * player.sheathBackDist,
@@ -291,30 +292,37 @@
                 };
             }
 
-            function getSheathEndPos() {
-                const sheathPos = getSheathPos();
-                const angle = player.aimAngle + Math.PI + 0.25; // sheath orientation
-                const len = 32;
+            // Sheath orientation: from back tip to opening (forward‑left)
+            function getSheathDirAngle() {
+                return player.aimAngle + 3 * Math.PI / 4;  // 135° offset → up‑left when facing right
+            }
+
+            // Opening position (where the handle sits)
+            function getSheathOpeningPos() {
+                const base = getSheathBasePos();
+                const dirAngle = getSheathDirAngle();
+                const sheathLength = 32;
                 return {
-                    x: sheathPos.x + Math.cos(angle) * len * 0.6,
-                    y: sheathPos.y + Math.sin(angle) * len * 0.6
+                    x: base.x + Math.cos(dirAngle) * sheathLength,
+                    y: base.y + Math.sin(dirAngle) * sheathLength
                 };
             }
 
-            // Get sword transform with corrected draw direction (forward)
+            // Handle angle when sheathed: opposite to sheath direction (points forward‑right)
+            function getHandleSheathAngle() {
+                return getSheathDirAngle() + Math.PI;  // player.aimAngle + 7π/4 = aimAngle - π/4
+            }
+
             function getSwordTransform() {
-                const sheathPos = getSheathPos();
-                const sheathEndPos = getSheathEndPos();
+                const opening = getSheathOpeningPos();
                 const rightHand = getRightHandPos();
-                const sheathAngle = player.aimAngle + Math.PI + 0.25; // blade direction when sheathed (pointing back-left)
-                const drawDirectionAngle = player.aimAngle + 0.3; // forward direction (slightly right of aim)
+                const handleAngle = getHandleSheathAngle();
                 const readyAngle = player.aimAngle + player.readyAngleOffset;
                 const endAngle = player.aimAngle + player.endAngleOffset;
-                const drawOutDistance = 44; // how far the blade/handle pulls out
+                const drawOutDistance = 44; // how far the sword is pulled out
 
                 if (player.slashState === 'idle') {
-                    // Sheathed: handle protrudes from sheath end
-                    return { x: sheathEndPos.x, y: sheathEndPos.y, angle: sheathAngle, sheathed: true };
+                    return { x: opening.x, y: opening.y, angle: handleAngle, sheathed: true };
                 }
 
                 const progress = 1 - (player.slashTimer / player.slashDuration);
@@ -323,22 +331,21 @@
                 if (player.slashState === 'windup') {
                     const pullOutPhase = 0.35;
                     if (t <= pullOutPhase) {
+                        // Pull sword straight out along handle direction
                         const localT = t / pullOutPhase;
                         const eased = easeOutQuad(localT);
-                        // Draw forward along drawDirectionAngle
-                        const drawX = sheathEndPos.x + Math.cos(drawDirectionAngle) * drawOutDistance * eased;
-                        const drawY = sheathEndPos.y + Math.sin(drawDirectionAngle) * drawOutDistance * eased;
-                        const angle = drawDirectionAngle; // point forward
-                        return { x: drawX, y: drawY, angle: angle, sheathed: false };
+                        const drawX = opening.x + Math.cos(handleAngle) * drawOutDistance * eased;
+                        const drawY = opening.y + Math.sin(handleAngle) * drawOutDistance * eased;
+                        return { x: drawX, y: drawY, angle: handleAngle, sheathed: false };
                     } else {
+                        // Arc from fully drawn position to right‑hand ready position
                         const localT = (t - pullOutPhase) / (1 - pullOutPhase);
                         const eased = easeInQuad(localT);
-                        // Move from forward drawn position to right hand ready position
-                        const startX = sheathEndPos.x + Math.cos(drawDirectionAngle) * drawOutDistance;
-                        const startY = sheathEndPos.y + Math.sin(drawDirectionAngle) * drawOutDistance;
+                        const startX = opening.x + Math.cos(handleAngle) * drawOutDistance;
+                        const startY = opening.y + Math.sin(handleAngle) * drawOutDistance;
                         const interpX = startX + (rightHand.x - startX) * eased;
                         const interpY = startY + (rightHand.y - startY) * eased;
-                        const interpAngle = drawDirectionAngle + (readyAngle - drawDirectionAngle) * eased;
+                        const interpAngle = handleAngle + (readyAngle - handleAngle) * eased;
                         return { x: interpX, y: interpY, angle: interpAngle, sheathed: false };
                     }
                 } else if (player.slashState === 'active') {
@@ -348,20 +355,19 @@
                         sheathed: false
                     };
                 } else if (player.slashState === 'recovery') {
-                    return {
-                        x: rightHand.x + (sheathEndPos.x - rightHand.x) * easeOutCubic(t),
-                        y: rightHand.y + (sheathEndPos.y - rightHand.y) * easeOutCubic(t),
-                        angle: endAngle + (sheathAngle - endAngle) * easeOutCubic(t),
-                        sheathed: false
-                    };
+                    // Slide back into the sheath, exactly reversing the draw
+                    const interpX = rightHand.x + (opening.x - rightHand.x) * easeOutCubic(t);
+                    const interpY = rightHand.y + (opening.y - rightHand.y) * easeOutCubic(t);
+                    const interpAngle = endAngle + (handleAngle - endAngle) * easeOutCubic(t);
+                    return { x: interpX, y: interpY, angle: interpAngle, sheathed: false };
                 }
-                return { x: sheathEndPos.x, y: sheathEndPos.y, angle: sheathAngle, sheathed: true };
+                return { x: opening.x, y: opening.y, angle: handleAngle, sheathed: true };
             }
 
-            // Thick hitbox for slash (line with larger radius)
+            // Thick hitbox for slash
             function checkSwordHitEnemy(enemy, swordBase, swordTip) {
                 const ex = enemy.x, ey = enemy.y;
-                const hitboxThickness = 14; // thicker slash effect
+                const hitboxThickness = 14;
                 const r = enemy.radius + hitboxThickness;
                 const dx = swordTip.x - swordBase.x, dy = swordTip.y - swordBase.y;
                 const lenSq = dx*dx+dy*dy;
@@ -384,7 +390,7 @@
                 sfxSlash();
             }
 
-            // Update loop
+            // Update loop (unchanged from previous, except using new transform)
             let lastTime = performance.now();
             function update(dt) {
                 const clampedDt = Math.min(dt, 0.1);
@@ -540,20 +546,18 @@
                 for(let y=50;y<H;y+=50){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
             }
 
-            function drawSheath(px, py){
-                const sheathPos = getSheathPos();
-                const angle = player.aimAngle + Math.PI + 0.25;
-                const len = 32, width = 6;
-                const cos = Math.cos(angle), sin = Math.sin(angle);
-                const startX = sheathPos.x - cos*len*0.4, startY = sheathPos.y - sin*len*0.4;
-                const endX = sheathPos.x + cos*len*0.6, endY = sheathPos.y + sin*len*0.6;
+            function drawSheath(){
+                const base = getSheathBasePos();
+                const dirAngle = getSheathDirAngle();
+                const sheathLength = 32;
+                const opening = getSheathOpeningPos();
                 ctx.save();
-                ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = width+2; ctx.lineCap = 'round';
-                ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
-                ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = width;
-                ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(endX, endY); ctx.stroke();
+                ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+                ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(opening.x, opening.y); ctx.stroke();
+                ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = 5;
+                ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(opening.x, opening.y); ctx.stroke();
                 ctx.fillStyle = '#1a0a00';
-                ctx.beginPath(); ctx.arc(endX, endY, width/1.5, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(opening.x, opening.y, 5, 0, Math.PI*2); ctx.fill();
                 ctx.restore();
             }
 
@@ -570,7 +574,7 @@
                 ctx.fillStyle='rgba(255,255,255,0.5)';
                 ctx.beginPath(); ctx.arc(px+Math.cos(player.bodyRotation)*player.radius*0.5, py+Math.sin(player.bodyRotation)*player.radius*0.5, player.radius*0.35,0,Math.PI*2); ctx.fill();
 
-                drawSheath(px, py);
+                drawSheath();
                 ctx.restore();
             }
 
@@ -582,15 +586,14 @@
 
                 ctx.save();
                 if (sheathed) {
-                    const sheathEnd = getSheathEndPos();
-                    const handleStartX = sheathEnd.x;
-                    const handleStartY = sheathEnd.y;
-                    const handleEndX = sheathEnd.x + Math.cos(angle) * handleLen;
-                    const handleEndY = sheathEnd.y + Math.sin(angle) * handleLen;
+                    const opening = getSheathOpeningPos();
+                    const handleAngle = getHandleSheathAngle();
+                    const handleEndX = opening.x + Math.cos(handleAngle) * handleLen;
+                    const handleEndY = opening.y + Math.sin(handleAngle) * handleLen;
                     ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-                    ctx.beginPath(); ctx.moveTo(handleStartX, handleStartY); ctx.lineTo(handleEndX, handleEndY); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(opening.x, opening.y); ctx.lineTo(handleEndX, handleEndY); ctx.stroke();
                     ctx.fillStyle = '#1a1a1a';
-                    ctx.beginPath(); ctx.arc(handleStartX, handleStartY, 3.5, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(opening.x, opening.y, 3.5, 0, Math.PI*2); ctx.fill();
                 } else {
                     const perpAngle = angle + Math.PI/2;
                     const baseWidth = 2.8, tipWidth = 0.7;
@@ -623,7 +626,6 @@
                     ctx.fill();
                     ctx.stroke();
 
-                    // Hamon
                     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
                     ctx.lineWidth = 0.5;
                     ctx.beginPath();
@@ -633,7 +635,6 @@
                     ctx.lineTo(hamonEndX, hamonEndY);
                     ctx.stroke();
 
-                    // Handle
                     ctx.strokeStyle = '#2a1a0a'; ctx.lineWidth = 4.5;
                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(angle)*handleLen, y - Math.sin(angle)*handleLen); ctx.stroke();
                     ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI*2); ctx.fill();
@@ -671,9 +672,8 @@
                 for(let i=1;i<trailPoints.length;i++){
                     const t0=trailPoints[i-1], t1=trailPoints[i];
                     const alpha=(t1.life/t1.maxLife)*0.9;
-                    // Thicker glowing trail
                     ctx.strokeStyle=`rgba(200,220,255,${alpha})`; 
-                    ctx.lineWidth = (t1.life/t1.maxLife) * 14 + 2; // much thicker
+                    ctx.lineWidth = (t1.life/t1.maxLife) * 14 + 2;
                     ctx.lineCap='round';
                     ctx.shadowColor = `rgba(180,210,255,${alpha})`;
                     ctx.shadowBlur = 12;
