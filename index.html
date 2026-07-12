@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Katana Zero - Top Down Slasher</title>
+    <style>
+        :root {
+            --bg: #0a0a0a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            cursor: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        canvas {
+            display: block;
+            border: 2px solid #1a1a1a;
+            border-radius: 4px;
+            box-shadow: 0 0 60px rgba(180, 30, 30, 0.3), 0 0 120px rgba(0, 0, 0, 0.8);
+        }
+
+        #ui-overlay {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .ui-item {
+            color: #ddd;
+            font-size: 16px;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .ui-item.combo {
+            color: #ff6b6b;
+            font-weight: bold;
+            font-size: 20px;
+            text-shadow: 0 0 20px rgba(255, 100, 100, 0.8);
+            transition: all 0.1s ease;
+        }
+
+        .ui-item.dash {
+            color: #6bb5ff;
+        }
+
+        #instructions {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #666;
+            font-size: 12px;
+            letter-spacing: 2px;
+            pointer-events: none;
+            text-align: center;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            border-radius: 20px;
+        }
+
+        #instructions span {
+            color: #aaa;
+        }
+        #instructions .key {
+            color: #fff;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game"></canvas>
+    <div id="ui-overlay">
+        <div class="ui-item" id="score-display">SCORE: 0</div>
+        <div class="ui-item combo" id="combo-display"></div>
+        <div class="ui-item dash" id="dash-display">DASH: READY</div>
+        <div class="ui-item" id="hp-display">HP: ❤❤❤</div>
+        <div class="ui-item" id="wave-display">WAVE: 1</div>
+    </div>
+    <div id="instructions">
+        <span class="key">WASD</span> Move &nbsp;|&nbsp;
+        <span class="key">MOUSE</span> Aim &nbsp;|&nbsp;
+        <span class="key">LEFT CLICK</span> Slash &nbsp;|&nbsp;
+        <span class="key">RIGHT CLICK / SHIFT</span> Dash &nbsp;|&nbsp;
+        <span>Chain slashes for combos!</span>
+    </div>
+
+    <script>
+        (function() {
+            const canvas = document.getElementById('game');
+            const ctx = canvas.getContext('2d');
+
+            // --- UI Elements ---
+            const scoreDisplay = document.getElementById('score-display');
+            const comboDisplay = document.getElementById('combo-display');
+            const dashDisplay = document.getElementById('dash-display');
+            const hpDisplay = document.getElementById('hp-display');
+            const waveDisplay = document.getElementById('wave-display');
+
+            // --- Canvas Setup ---
+            let W, H;
+
+            function resize() {
+                const maxW = Math.min(window.innerWidth - 20, 1000);
+                const maxH = Math.min(window.innerHeight - 20, 750);
+                W = Math.floor(maxW);
+                H = Math.floor(maxH);
+                canvas.width = W;
+                canvas.height = H;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            // --- Audio System (synthesized sounds) ---
+            let audioCtx = null;
+
+            function initAudio() {
+                if (!audioCtx) {
+                    audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+            }
+
+            function playSynth(freq, type, duration, vol = 0.08, glideTo = null) {
+                if (!audioCtx) return;
+                try {
+                    const t = audioCtx.currentTime;
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, t);
+                    if (glideTo) osc.frequency.linearRampToValueAtTime(glideTo, t + duration);
+                    gain.gain.setValueAtTime(vol, t);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(t);
+                    osc.stop(t + duration);
+                } catch (e) {
+                    // Silently fail
+                }
+            }
+
+            function sfxSlash() { playSynth(300, 'sawtooth', 0.1, 0.06, 80);
+                playSynth(600, 'triangle', 0.08, 0.06, 200); }
+
+            function sfxHit() { playSynth(100, 'square', 0.12, 0.08, 40);
+                playSynth(50, 'sawtooth', 0.06, 0.06, 20); }
+
+            function sfxKill() { playSynth(500, 'sawtooth', 0.06, 0.1, 100);
+                playSynth(800, 'triangle', 0.07, 0.08, 300);
+                playSynth(60, 'square', 0.05, 0.15, 25); }
+
+            function sfxDash() { playSynth(200, 'sine', 0.15, 0.08, 600);
+                playSynth(150, 'triangle', 0.05, 0.1, 50); }
+
+            function sfxComboReady() { playSynth(900, 'sine', 0.06, 0.06, 1200);
+                playSynth(1100, 'triangle', 0.04, 0.05, 1400); }
+
+            // --- Input ---
+            const keys = {};
+            let mouseX = W / 2,
+                mouseY = H / 2;
+            let mouseDown = false;
+            let rightMouseDown = false;
+            let mouseJustPressed = false;
+            let dashJustPressed = false;
+
+            window.addEventListener('keydown', e => {
+                keys[e.key.toLowerCase()] = true;
+                if (e.key.toLowerCase() === 'shift') {
+                    e.preventDefault();
+                    if (!dashJustPressed && !keys['shift_was_down']) {
+                        dashJustPressed = true;
+                    }
+                    keys['shift_was_down'] = true;
+                }
+            });
+            window.addEventListener('keyup', e => {
+                keys[e.key.toLowerCase()] = false;
+                if (e.key.toLowerCase() === 'shift') {
+                    keys['shift_was_down'] = false;
+                }
+            });
+
+            canvas.addEventListener('mousemove', e => {
+                const rect = canvas.getBoundingClientRect();
+                mouseX = (e.clientX - rect.left) * (W / rect.width);
+                mouseY = (e.clientY - rect.top) * (H / rect.height);
+            });
+
+            canvas.addEventListener('mousedown', e => {
+                initAudio();
+                if (e.button === 0) {
+                    mouseJustPressed = true;
+                    mouseDown = true;
+                }
+                if (e.button === 2) {
+                    dashJustPressed = true;
+                    rightMouseDown = true;
+                }
+                e.preventDefault();
+            });
+            canvas.addEventListener('mouseup', e => {
+                if (e.button === 0) mouseDown = false;
+                if (e.button === 2) rightMouseDown = false;
+            });
+            canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+            // Touch support
+            canvas.addEventListener('touchstart', e => {
+                initAudio();
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                const tx = (e.touches[0].clientX - rect.left) * (W / rect.width);
+                const ty = (e.touches[0].clientY - rect.top) * (H / rect.height);
+                mouseX = tx;
+                mouseY = ty;
+                mouseJustPressed = true;
+                mouseDown = true;
+                if (e.touches.length >= 2) {
+                    dashJustPressed = true;
+                }
+            });
+            canvas.addEventListener('touchmove', e => {
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                mouseX = (e.touches[0].clientX - rect.left) * (W / rect.width);
+                mouseY = (e.touches[0].clientY - rect.top) * (H / rect.height);
+            });
+            canvas.addEventListener('touchend', e => {
+                mouseDown = false;
+                if (e.touches.length === 0) {
+                    mouseDown = false;
+                }
+            });
+
+            // --- Particles ---
+            const particles = [];
+            const trailPoints = []; // slash trail
+            const afterimages = []; // dash afterimages
+
+            function spawnParticles(x, y, count, color, speed = 3, life = 0.4) {
+                for (let i = 0; i < count; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const spd = speed * (0.5 + Math.random());
+                    particles.push({
+                        x,
+                        y,
+                        vx: Math.cos(angle) * spd,
+                        vy: Math.sin(angle) * spd,
+                        life,
+                        maxLife: life,
+                        color,
+                        size: 1.5 + Math.random() * 3,
+                    });
+                }
+            }
+
+            function spawnSlashTrail(x, y, angle, length) {
+                const tipX = x + Math.cos(angle) * length;
+                const tipY = y + Math.sin(angle) * length;
+                trailPoints.push({
+                    x: tipX,
+                    y: tipY,
+                    life: 0.25,
+                    maxLife: 0.25,
+                });
+            }
+
+            function addAfterimage(x, y, angle) {
+                afterimages.push({
+                    x,
+                    y,
+                    angle,
+                    life: 0.2,
+                    maxLife: 0.2,
+                });
+            }
+
+            // --- Screen Shake ---
+            let shakeAmount = 0;
+            let shakeDuration = 0;
+            let shakeX = 0;
+            let shakeY = 0;
+
+            function triggerShake(amount = 6, duration = 0.15) {
+                shakeAmount = Math.max(shakeAmount, amount);
+                shakeDuration = Math.max(shakeDuration, duration);
+            }
+
+            // --- Player ---
+            const player = {
+                x: W / 2,
+                y: H / 2,
+                radius: 16,
+                speed: 220,
+                vx: 0,
+                vy: 0,
+                aimAngle: 0,
+                // Katana state
+                bladeLength: 48,
+                bladeCurve: 8, // curvature offset
+                slashState: 'idle', // 'idle' | 'windup' | 'active' | 'recovery'
+                slashTimer: 0,
+                slashDuration: 0,
+                slashStartAngle: 0,
+                slashEndAngle: 0,
+                slashArcCenter: 0,
+                slashDirection: 1, // 1 or -1 for alternating slashes
+                slashHitEnemies: new Set(),
+                comboCount: 0,
+                comboTimer: 0,
+                comboWindow: 0.55,
+                // Dash
+                dashActive: false,
+                dashTimer: 0,
+                dashDuration: 0.13,
+                dashSpeed: 900,
+                dashDirX: 0,
+                dashDirY: 0,
+                dashCooldown: 0,
+                dashCooldownMax: 1.1,
+                dashAfterimageTimer: 0,
+                // Health
+                hp: 3,
+                maxHp: 3,
+                invulnTimer: 0,
+                invulnDuration: 1.2,
+                // Visual
+                bodyRotation: 0,
+                bladeGlow: 0,
+            };
+
+            function resetPlayer() {
+                player.x = W / 2;
+                player.y = H / 2;
+                player.hp = player.maxHp;
+                player.slashState = 'idle';
+                player.dashActive = false;
+                player.dashCooldown = 0;
+                player.comboCount = 0;
+                player.comboTimer = 0;
+                player.invulnTimer = 1.5;
+                player.bladeGlow = 0;
+                player.slashHitEnemies.clear();
+                player.vx = 0;
+                player.vy = 0;
+                player.bodyRotation = 0;
+            }
+
+            // --- Enemies ---
+            const enemies = [];
+            const enemyTypes = [
+                { name: 'grunt', radius: 13, speed: 90, hp: 1, color: '#c0392b', score: 100 },
+                { name: 'runner', radius: 11, speed: 170, hp: 1, color: '#e74c3c', score: 150 },
+                { name: 'brute', radius: 20, speed: 55, hp: 3, color: '#8b0000', score: 400 },
+            ];
+
+            function spawnEnemy(typeIndex = null) {
+                if (typeIndex === null) {
+                    // Weighted random
+                    const roll = Math.random();
+                    if (roll < 0.6) typeIndex = 0; // grunt
+                    else if (roll < 0.9) typeIndex = 1; // runner
+                    else typeIndex = 2; // brute
+                }
+                const type = enemyTypes[Math.min(typeIndex, enemyTypes.length - 1)];
+                // Spawn from edges
+                let sx, sy;
+                const side = Math.floor(Math.random() * 4);
+                const margin = 40;
+                switch (side) {
+                    case 0:
+                        sx = -margin;
+                        sy = Math.random() * H;
+                        break;
+                    case 1:
+                        sx = W + margin;
+                        sy = Math.random() * H;
+                        break;
+                    case 2:
+                        sx = Math.random() * W;
+                        sy = -margin;
+                        break;
+                    case 3:
+                        sx = Math.random() * W;
+                        sy = H + margin;
+                        break;
+                }
+                enemies.push({
+                    x: sx,
+                    y: sy,
+                    radius: type.radius,
+                    speed: type.speed * (0.85 + Math.random() * 0.3),
+                    hp: type.hp,
+                    maxHp: type.hp,
+                    color: type.color,
+                    score: type.score,
+                    name: type.name,
+                    hitFlash: 0,
+                    stunTimer: 0,
+                });
+            }
+
+            // --- Wave System ---
+            let waveNumber = 1;
+            let enemiesRemaining = 0;
+            let waveActive = false;
+            let waveSpawnTimer = 0;
+            let waveSpawnInterval = 0.8;
+            let waveEnemiesToSpawn = 0;
+            let waveSpawnedCount = 0;
+            let waveDelay = 1.5;
+
+            function startWave(num) {
+                waveNumber = num;
+                waveEnemiesToSpawn = 5 + num * 3;
+                waveSpawnedCount = 0;
+                enemiesRemaining = waveEnemiesToSpawn;
+                waveActive = true;
+                waveSpawnTimer = 0;
+                waveSpawnInterval = Math.max(0.25, 0.8 - num * 0.05);
+                // Add some existing enemies for higher waves
+                if (num > 2) {
+                    const preSpawn = Math.floor(num / 2);
+                    for (let i = 0; i < preSpawn; i++) {
+                        const typeIdx = num > 5 ? Math.floor(Math.random() * 3) : Math.floor(Math.random() *
+                            2);
+                        spawnEnemy(typeIdx);
+                        waveSpawnedCount++;
+                        enemiesRemaining = waveEnemiesToSpawn - waveSpawnedCount + preSpawn;
+                    }
+                    waveSpawnedCount = preSpawn;
+                    enemiesRemaining = waveEnemiesToSpawn;
+                }
+                updateUI();
+            }
+
+            function updateUI() {
+                scoreDisplay.textContent = `SCORE: ${gameScore}`;
+                waveDisplay.textContent = `WAVE: ${waveNumber}`;
+                hpDisplay.textContent = `HP: ${'❤'.repeat(Math.max(0, player.hp))}${'🖤'.repeat(Math.max(0, player.maxHp - player.hp))}`;
+                if (player.comboCount >= 3) {
+                    comboDisplay.textContent = `COMBO x${player.comboCount}`;
+                    comboDisplay.style.opacity = '1';
+                } else if (player.comboCount > 0) {
+                    comboDisplay.textContent = `COMBO x${player.comboCount}`;
+                    comboDisplay.style.opacity = '0.7';
+                } else {
+                    comboDisplay.textContent = '';
+                    comboDisplay.style.opacity = '0';
+                }
+                const dashReady = player.dashCooldown <= 0 && !player.dashActive;
+                dashDisplay.textContent = dashReady ? 'DASH: READY' : 'DASH: CD';
+                dashDisplay.style.color = dashReady ? '#6bb5ff' : '#ff6b6b';
+            }
+
+            let gameScore = 0;
+            let gameOver = false;
+            let gameOverTimer = 0;
+
+            function triggerGameOver() {
+                gameOver = true;
+                gameOverTimer = 0;
+                player.slashState = 'idle';
+                player.dashActive = false;
+                player.vx = 0;
+                player.vy = 0;
+                spawnParticles(player.x, player.y, 60, '#ff0000', 8, 0.8);
+                spawnParticles(player.x, player.y, 40, '#ffffff', 6, 0.5);
+                triggerShake(16, 0.5);
+                playSynth(40, 'sawtooth', 0.5, 0.1, 20);
+            }
+
+            function restartGame() {
+                gameScore = 0;
+                gameOver = false;
+                gameOverTimer = 0;
+                waveNumber = 1;
+                enemies.length = 0;
+                particles.length = 0;
+                trailPoints.length = 0;
+                afterimages.length = 0;
+                shakeAmount = 0;
+                shakeDuration = 0;
+                player.slashHitEnemies.clear();
+                resetPlayer();
+                startWave(1);
+                updateUI();
+            }
+
+            // --- Game Loop ---
+            let lastTime = performance.now();
+
+            function update(dt) {
+                // Clamp dt to avoid huge jumps
+                const clampedDt = Math.min(dt, 0.1);
+
+                if (gameOver) {
+                    gameOverTimer += clampedDt;
+                    // Update particles
+                    updateParticles(clampedDt);
+                    updateTrails(clampedDt);
+                    updateAfterimages(clampedDt);
+                    updateShake(clampedDt);
+                    if (gameOverTimer > 2.5) {
+                        // Auto restart or show prompt
+                        if (keys['r'] || mouseJustPressed) {
+                            restartGame();
+                            mouseJustPressed = false;
+                        }
+                    }
+                    // Still update enemies slowly
+                    for (const enemy of enemies) {
+                        if (enemy.stunTimer > 0) enemy.stunTimer -= clampedDt;
+                        if (enemy.hitFlash > 0) enemy.hitFlash -= clampedDt;
+                    }
+                    return;
+                }
+
+                // Update timers
+                if (player.comboTimer > 0) {
+                    player.comboTimer -= clampedDt;
+                    if (player.comboTimer <= 0) {
+                        player.comboCount = 0;
+                        player.slashDirection = 1;
+                    }
+                }
+                if (player.invulnTimer > 0) player.invulnTimer -= clampedDt;
+                if (player.dashCooldown > 0) player.dashCooldown -= clampedDt;
+                if (player.bladeGlow > 0) player.bladeGlow -= clampedDt * 3;
+
+                // --- Player Movement ---
+                let moveX = 0,
+                    moveY = 0;
+                if (keys['w'] || keys['arrowup']) moveY = -1;
+                if (keys['s'] || keys['arrowdown']) moveY = 1;
+                if (keys['a'] || keys['arrowleft']) moveX = -1;
+                if (keys['d'] || keys['arrowright']) moveX = 1;
+
+                const moveLen = Math.sqrt(moveX * moveX + moveY * moveY);
+                if (moveLen > 1) {
+                    moveX /= moveLen;
+                    moveY /= moveLen;
+                }
+
+                // Aim angle towards mouse
+                const aimDx = mouseX - player.x;
+                const aimDy = mouseY - player.y;
+                player.aimAngle = Math.atan2(aimDy, aimDx);
+
+                // --- Dash ---
+                if (dashJustPressed && player.dashCooldown <= 0 && !player.dashActive && player.slashState ===
+                    'idle') {
+                    // Initiate dash
+                    player.dashActive = true;
+                    player.dashTimer = player.dashDuration;
+                    player.dashCooldown = player.dashCooldownMax;
+                    player.invulnTimer = Math.max(player.invulnTimer, player.dashDuration + 0.05);
+                    if (moveLen > 0.1) {
+                        player.dashDirX = moveX;
+                        player.dashDirY = moveY;
+                    } else {
+                        player.dashDirX = Math.cos(player.aimAngle);
+                        player.dashDirY = Math.sin(player.aimAngle);
+                    }
+                    player.dashAfterimageTimer = 0;
+                    sfxDash();
+                    spawnParticles(player.x, player.y, 12, '#88ccff', 4, 0.3);
+                    // Cancel current slash
+                    player.slashState = 'idle';
+                    player.slashHitEnemies.clear();
+                }
+                dashJustPressed = false;
+
+                if (player.dashActive) {
+                    player.dashTimer -= clampedDt;
+                    player.x += player.dashDirX * player.dashSpeed * clampedDt;
+                    player.y += player.dashDirY * player.dashSpeed * clampedDt;
+                    // Afterimages
+                    player.dashAfterimageTimer -= clampedDt;
+                    if (player.dashAfterimageTimer <= 0) {
+                        player.dashAfterimageTimer = 0.025;
+                        addAfterimage(player.x, player.y, player.aimAngle);
+                    }
+                    // Kill enemies on dash contact
+                    for (const enemy of enemies) {
+                        const edx = enemy.x - player.x;
+                        const edy = enemy.y - player.y;
+                        const dist = Math.sqrt(edx * edx + edy * edy);
+                        if (dist < player.radius + enemy.radius + 10) {
+                            killEnemy(enemy);
+                            triggerShake(3, 0.08);
+                        }
+                    }
+                    if (player.dashTimer <= 0) {
+                        player.dashActive = false;
+                        player.vx = player.dashDirX * 60;
+                        player.vy = player.dashDirY * 60;
+                    }
+                } else {
+                    // Normal movement
+                    const spd = player.speed;
+                    player.vx = moveX * spd;
+                    player.vy = moveY * spd;
+                    player.x += player.vx * clampedDt;
+                    player.y += player.vy * clampedDt;
+                }
+
+                // Clamp player to arena
+                player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
+                player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
+
+                // Smooth body rotation towards aim
+                const targetBodyRot = player.aimAngle;
+                let rotDiff = targetBodyRot - player.bodyRotation;
+                while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+                while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+                player.bodyRotation += rotDiff * Math.min(1, clampedDt * 14);
+
+                // --- Slash System ---
+                if (mouseJustPressed && player.slashState === 'idle' && !player.dashActive) {
+                    initiateSlash();
+                }
+                mouseJustPressed = false;
+
+                // Update slash state machine
+                if (player.slashState !== 'idle') {
+                    player.slashTimer -= clampedDt;
+                    const progress = 1 - (player.slashTimer / player.slashDuration);
+
+                    if (player.slashState === 'windup') {
+                        if (player.slashTimer <= 0) {
+                            // Transition to active
+                            player.slashState = 'active';
+                            player.slashDuration = 0.07;
+                            player.slashTimer = player.slashDuration;
+                            player.slashHitEnemies.clear();
+                            player.bladeGlow = 1;
+                        }
+                    } else if (player.slashState === 'active') {
+                        // Check for hits
+                        const currentAngle = getSlashAngle(progress);
+                        checkSlashHits(currentAngle);
+                        // Spawn trail
+                        spawnSlashTrail(player.x, player.y, currentAngle, player.bladeLength);
+                        if (player.slashTimer <= 0) {
+                            // Transition to recovery
+                            player.slashState = 'recovery';
+                            player.slashDuration = 0.18;
+                            player.slashTimer = player.slashDuration;
+                        }
+                    } else if (player.slashState === 'recovery') {
+                        if (player.slashTimer <= 0) {
+                            player.slashState = 'idle';
+                            player.slashHitEnemies.clear();
+                        }
+                    }
+                }
+
+                // --- Combo input buffering ---
+                if (mouseJustPressed && player.slashState === 'recovery' && player.slashTimer < 0.08 &&
+                    player.comboCount < 5) {
+                    // Buffer next slash
+                    initiateSlash();
+                }
+
+                // --- Enemy AI ---
+                for (const enemy of enemies) {
+                    if (enemy.stunTimer > 0) {
+                        enemy.stunTimer -= clampedDt;
+                        // Knockback decay
+                        enemy.x += (enemy.knockbackVx || 0) * clampedDt * 3;
+                        enemy.y += (enemy.knockbackVy || 0) * clampedDt * 3;
+                        if (enemy.knockbackVx) enemy.knockbackVx *= 0.9;
+                        if (enemy.knockbackVy) enemy.knockbackVy *= 0.9;
+                        continue;
+                    }
+                    const edx = player.x - enemy.x;
+                    const edy = player.y - enemy.y;
+                    const dist = Math.sqrt(edx * edx + edy * edy);
+                    if (dist > 0) {
+                        const nx = edx / dist;
+                        const ny = edy / dist;
+                        const spd = enemy.speed;
+                        enemy.x += nx * spd * clampedDt;
+                        enemy.y += ny * spd * clampedDt;
+                    }
+                    // Clamp enemies
+                    enemy.x = Math.max(-30, Math.min(W + 30, enemy.x));
+                    enemy.y = Math.max(-30, Math.min(H + 30, enemy.y));
+                    if (enemy.hitFlash > 0) enemy.hitFlash -= clampedDt;
+                }
+
+                // --- Collision: Enemy hits player ---
+                if (player.invulnTimer <= 0 && !player.dashActive && !gameOver) {
+                    for (const enemy of enemies) {
+                        const edx = player.x - enemy.x;
+                        const edy = player.y - enemy.y;
+                        const dist = Math.sqrt(edx * edx + edy * edy);
+                        if (dist < player.radius + enemy.radius) {
+                            // Player takes damage
+                            player.hp--;
+                            player.invulnTimer = player.invulnDuration;
+                            triggerShake(8, 0.2);
+                            spawnParticles(player.x, player.y, 20, '#ff4444', 5, 0.5);
+                            sfxHit();
+                            playSynth(80, 'square', 0.15, 0.06, 30);
+                            // Knockback player
+                            const knx = edx / (dist || 1);
+                            const kny = edy / (dist || 1);
+                            player.x -= knx * 40;
+                            player.y -= kny * 40;
+                            player.x = Math.max(player.radius, Math.min(W - player.radius, player.x));
+                            player.y = Math.max(player.radius, Math.min(H - player.radius, player.y));
+                            if (player.hp <= 0) {
+                                triggerGameOver();
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // --- Wave Management ---
+                if (waveActive) {
+                    waveSpawnTimer -= clampedDt;
+                    if (waveSpawnTimer <= 0 && waveSpawnedCount < waveEnemiesToSpawn) {
+                        const typeIdx = waveNumber > 3 ? Math.floor(Math.random() * 3) : waveNumber > 1 ? Math.floor(
+                            Math.random() * 2) : 0;
+                        spawnEnemy(typeIdx);
+                        waveSpawnedCount++;
+                        waveSpawnTimer = waveSpawnInterval * (0.7 + Math.random() * 0.6);
+                    }
+                    // Check if wave is cleared
+                    const aliveEnemies = enemies.filter(e => e.hp > 0).length;
+                    const allSpawned = waveSpawnedCount >= waveEnemiesToSpawn;
+                    if (allSpawned && aliveEnemies === 0 && enemies.length === 0) {
+                        waveActive = false;
+                        waveDelay = 2.0;
+                        player.invulnTimer = Math.max(player.invulnTimer, 1.5);
+                        spawnParticles(player.x, player.y, 30, '#ffd700', 3, 0.6);
+                        sfxComboReady();
+                        // Start next wave after delay
+                        setTimeout(() => {
+                            if (!gameOver) {
+                                startWave(waveNumber + 1);
+                                updateUI();
+                            }
+                        }, waveDelay * 1000);
+                    }
+                    // Clean up dead enemies
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        if (enemies[i].hp <= 0) {
+                            enemies.splice(i, 1);
+                        }
+                    }
+                }
+
+                // --- Update particles ---
+                updateParticles(clampedDt);
+                updateTrails(clampedDt);
+                updateAfterimages(clampedDt);
+                updateShake(clampedDt);
+                updateUI();
+            }
+
+            function initiateSlash() {
+                player.slashState = 'windup';
+                player.slashDuration = 0.06;
+                player.slashTimer = player.slashDuration;
+                player.slashHitEnemies.clear();
+                // Determine slash arc
+                player.slashDirection *= -1; // Alternate
+                const baseAngle = player.aimAngle;
+                const arcSize = 2.5 + player.comboCount * 0.3; // Larger arcs for higher combos (radians ~143° to ~215°)
+                player.slashStartAngle = baseAngle - arcSize / 2 * player.slashDirection;
+                player.slashEndAngle = baseAngle + arcSize / 2 * player.slashDirection;
+                player.slashArcCenter = baseAngle;
+                // Combo
+                player.comboCount = Math.min(5, player.comboCount + 1);
+                player.comboTimer = player.comboWindow;
+                player.bladeGlow = 0.6;
+                if (player.comboCount >= 3) sfxComboReady();
+                sfxSlash();
+            }
+
+            function getSlashAngle(progress) {
+                if (player.slashState === 'windup') {
+                    // Pull back slightly
+                    const pullback = -0.35 * player.slashDirection;
+                    const eased = easeInQuad(progress);
+                    return player.slashArcCenter + pullback * eased;
+                } else if (player.slashState === 'active') {
+                    // Fast sweep
+                    const eased = easeOutQuad(progress);
+                    return player.slashStartAngle + (player.slashEndAngle - player.slashStartAngle) * eased;
+                } else if (player.slashState === 'recovery') {
+                    // Settle to aim angle
+                    const eased = easeOutCubic(progress);
+                    const activeEndAngle = player.slashEndAngle;
+                    return activeEndAngle + (player.aimAngle - activeEndAngle) * eased;
+                }
+                return player.aimAngle;
+            }
+
+            function checkSlashHits(currentAngle) {
+                const slashReach = player.bladeLength + 8;
+                for (const enemy of enemies) {
+                    if (player.slashHitEnemies.has(enemy)) continue;
+                    if (enemy.hp <= 0) continue;
+                    const edx = enemy.x - player.x;
+                    const edy = enemy.y - player.y;
+                    const dist = Math.sqrt(edx * edx + edy * edy);
+                    if (dist > slashReach + enemy.radius) continue;
+                    if (dist < player.radius - 5) continue;
+                    // Check if enemy is within the slash arc
+                    const angleToEnemy = Math.atan2(edy, edx);
+                    let angleDiff = angleToEnemy - currentAngle;
+                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                    const arcTolerance = 0.55 + player.comboCount * 0.08;
+                    if (Math.abs(angleDiff) < arcTolerance) {
+                        // Hit!
+                        player.slashHitEnemies.add(enemy);
+                        enemy.hp--;
+                        enemy.hitFlash = 0.1;
+                        enemy.stunTimer = 0.2;
+                        const knx = Math.cos(angleToEnemy) * 200;
+                        const kny = Math.sin(angleToEnemy) * 200;
+                        enemy.knockbackVx = knx;
+                        enemy.knockbackVy = kny;
+                        spawnParticles(enemy.x, enemy.y, 8, '#ffaa00', 4, 0.3);
+                        triggerShake(2 + player.comboCount, 0.06);
+                        if (enemy.hp <= 0) {
+                            killEnemy(enemy);
+                        } else {
+                            sfxHit();
+                        }
+                    }
+                }
+            }
+
+            function killEnemy(enemy) {
+                enemy.hp = 0;
+                const scoreBonus = player.comboCount * enemy.score;
+                gameScore += scoreBonus;
+                spawnParticles(enemy.x, enemy.y, 18 + player.comboCount * 4, enemy.color, 6, 0.5);
+                spawnParticles(enemy.x, enemy.y, 10, '#ffffff', 3, 0.25);
+                triggerShake(4 + player.comboCount, 0.12);
+                sfxKill();
+                // Score popup particle
+                particles.push({
+                    x: enemy.x,
+                    y: enemy.y,
+                    vx: (Math.random() - 0.5) * 20,
+                    vy: -40 - Math.random() * 30,
+                    life: 0.8,
+                    maxLife: 0.8,
+                    color: '#ffd700',
+                    size: 0,
+                    text: `+${scoreBonus}`,
+                    isText: true,
+                });
+            }
+
+            function updateParticles(dt) {
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    p.life -= dt;
+                    if (p.life <= 0) {
+                        particles.splice(i, 1);
+                        continue;
+                    }
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                    if (!p.isText) {
+                        p.size *= 0.98;
+                    }
+                }
+            }
+
+            function updateTrails(dt) {
+                for (let i = trailPoints.length - 1; i >= 0; i--) {
+                    trailPoints[i].life -= dt;
+                    if (trailPoints[i].life <= 0) {
+                        trailPoints.splice(i, 1);
+                    }
+                }
+            }
+
+            function updateAfterimages(dt) {
+                for (let i = afterimages.length - 1; i >= 0; i--) {
+                    afterimages[i].life -= dt;
+                    if (afterimages[i].life <= 0) {
+                        afterimages.splice(i, 1);
+                    }
+                }
+            }
+
+            function updateShake(dt) {
+                if (shakeDuration > 0) {
+                    shakeDuration -= dt;
+                    const intensity = shakeAmount * (shakeDuration / Math.max(0.01, shakeDuration + 0.05));
+                    shakeX = (Math.random() - 0.5) * intensity * 2;
+                    shakeY = (Math.random() - 0.5) * intensity * 2;
+                    if (shakeDuration <= 0) {
+                        shakeX = 0;
+                        shakeY = 0;
+                        shakeAmount = 0;
+                    }
+                } else {
+                    shakeX = 0;
+                    shakeY = 0;
+                    shakeAmount = 0;
+                }
+            }
+
+            // --- Easing Functions ---
+            function easeInQuad(t) { return t * t; }
+
+            function easeOutQuad(t) { return t * (2 - t); }
+
+            function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+            function easeOutElastic(t) {
+                if (t === 0 || t === 1) return t;
+                return Math.pow(2, -10 * t) * Math.sin((t - 1) * (2 * Math.PI) / 0.3) + 1;
+            }
+
+            // --- Rendering ---
+            function drawFloor() {
+                // Tatami-style floor
+                ctx.fillStyle = '#1a1a1a';
+                ctx.fillRect(0, 0, W, H);
+
+                // Subtle grid
+                ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+                ctx.lineWidth = 1;
+                const gridSize = 50;
+                for (let x = gridSize; x < W; x += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, H);
+                    ctx.stroke();
+                }
+                for (let y = gridSize; y < H; y += gridSize) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(W, y);
+                    ctx.stroke();
+                }
+
+                // Subtle radial glow at center
+                const grad = ctx.createRadialGradient(W / 2, H / 2, W * 0.1, W / 2, H / 2, W * 0.7);
+                grad.addColorStop(0, 'rgba(30,30,30,0.4)');
+                grad.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            function drawPlayer() {
+                ctx.save();
+                const px = player.x + shakeX;
+                const py = player.y + shakeY;
+
+                // Invulnerability flicker
+                if (player.invulnTimer > 0 && Math.floor(player.invulnTimer * 20) % 2 === 0 && !player.dashActive) {
+                    ctx.globalAlpha = 0.4;
+                }
+
+                // Body shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.beginPath();
+                ctx.arc(px + 2, py + 2, player.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Body
+                const bodyGrad = ctx.createRadialGradient(px - 3, py - 3, player.radius * 0.2, px, py, player.radius);
+                bodyGrad.addColorStop(0, '#e8e8e8');
+                bodyGrad.addColorStop(0.7, '#b0b0b0');
+                bodyGrad.addColorStop(1, '#606060');
+                ctx.fillStyle = bodyGrad;
+                ctx.beginPath();
+                ctx.arc(px, py, player.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // Direction indicator (subtle)
+                const indX = px + Math.cos(player.bodyRotation) * player.radius * 0.5;
+                const indY = py + Math.sin(player.bodyRotation) * player.radius * 0.5;
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.beginPath();
+                ctx.arc(indX, indY, player.radius * 0.35, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Shoulders/arms hint
+                const shoulderLen = player.radius * 1.1;
+                const perpAngle = player.bodyRotation + Math.PI / 2;
+                for (let s = -1; s <= 1; s += 2) {
+                    const sx = px + Math.cos(player.bodyRotation + s * 0.7) * shoulderLen * 0.7;
+                    const sy = py + Math.sin(player.bodyRotation + s * 0.7) * shoulderLen * 0.7;
+                    ctx.fillStyle = 'rgba(200,200,200,0.6)';
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, player.radius * 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+
+                // --- Draw Katana ---
+                drawKatana(px, py);
+            }
+
+            function drawKatana(px, py) {
+                ctx.save();
+
+                let bladeAngle;
+                let glowIntensity = player.bladeGlow;
+
+                if (player.slashState === 'idle') {
+                    bladeAngle = player.aimAngle;
+                } else {
+                    const progress = 1 - (player.slashTimer / player.slashDuration);
+                    bladeAngle = getSlashAngle(progress);
+                    if (player.slashState === 'active') {
+                        glowIntensity = 1;
+                    }
+                }
+
+                // The katana is held at the player's position
+                // Handle (tsuka) starts near the player body
+                const handleStartDist = player.radius * 0.5;
+                const handleLength = 16;
+                const bladeStartDist = handleStartDist + handleLength;
+                const bladeTotalLength = player.bladeLength;
+                const bladeTipDist = bladeStartDist + bladeTotalLength;
+
+                const handleStartX = px + Math.cos(bladeAngle) * handleStartDist;
+                const handleStartY = py + Math.sin(bladeAngle) * handleStartDist;
+                const bladeStartX = px + Math.cos(bladeAngle) * bladeStartDist;
+                const bladeStartY = py + Math.sin(bladeAngle) * bladeStartDist;
+                const bladeTipX = px + Math.cos(bladeAngle) * bladeTipDist;
+                const bladeTipY = py + Math.sin(bladeAngle) * bladeTipDist;
+
+                // --- Draw blade glow (during active slash) ---
+                if (glowIntensity > 0.01) {
+                    ctx.save();
+                    const glowAlpha = glowIntensity * 0.7;
+                    ctx.strokeStyle = `rgba(200,220,255,${glowAlpha})`;
+                    ctx.lineWidth = 6 + glowIntensity * 8;
+                    ctx.lineCap = 'round';
+                    ctx.shadowColor = `rgba(180,210,255,${glowAlpha})`;
+                    ctx.shadowBlur = 15 + glowIntensity * 25;
+                    ctx.beginPath();
+                    ctx.moveTo(bladeStartX, bladeStartY);
+                    // Slight curve for the blade
+                    const perpX = -Math.sin(bladeAngle) * player.bladeCurve;
+                    const perpY = Math.cos(bladeAngle) * player.bladeCurve;
+                    const midX = (bladeStartX + bladeTipX) / 2 + perpX;
+                    const midY = (bladeStartY + bladeTipY) / 2 + perpY;
+                    ctx.quadraticCurveTo(midX, midY, bladeTipX, bladeTipY);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                // --- Draw handle (tsuka) ---
+                const handleEndX = bladeStartX;
+                const handleEndY = bladeStartY;
+                ctx.strokeStyle = '#2a1a0a';
+                ctx.lineWidth = 5;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(handleStartX, handleStartY);
+                ctx.lineTo(handleEndX, handleEndY);
+                ctx.stroke();
+
+                // Handle wrapping (ito) - subtle lines
+                ctx.strokeStyle = '#1a0a00';
+                ctx.lineWidth = 6;
+                ctx.beginPath();
+                ctx.moveTo(handleStartX, handleStartY);
+                ctx.lineTo(handleEndX, handleEndY);
+                ctx.stroke();
+                ctx.strokeStyle = '#3d2a10';
+                ctx.lineWidth = 3.5;
+                ctx.beginPath();
+                ctx.moveTo(handleStartX, handleStartY);
+                ctx.lineTo(handleEndX, handleEndY);
+                ctx.stroke();
+
+                // Tsuba (guard) - small ellipse
+                const tsubaX = handleEndX;
+                const tsubaY = handleEndY;
+                ctx.fillStyle = '#1a1a1a';
+                ctx.strokeStyle = '#444';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                const tsubaPerpX = -Math.sin(bladeAngle) * 9;
+                const tsubaPerpY = Math.cos(bladeAngle) * 9;
+                ctx.ellipse(tsubaX, tsubaY, 9, 3.5, bladeAngle, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // --- Draw blade ---
+                // Katana blade with slight curve - drawn as a filled polygon
+                const bladeBaseWidth = 3.5;
+                const bladeTipWidth = 0.8;
+                const curveOffset = player.bladeCurve;
+
+                // Points for the blade polygon
+                const perpAngle = bladeAngle + Math.PI / 2;
+                const baseLeftX = bladeStartX + Math.cos(perpAngle) * bladeBaseWidth;
+                const baseLeftY = bladeStartY + Math.sin(perpAngle) * bladeBaseWidth;
+                const baseRightX = bladeStartX - Math.cos(perpAngle) * bladeBaseWidth;
+                const baseRightY = bladeStartY - Math.sin(perpAngle) * bladeBaseWidth;
+                const tipLeftX = bladeTipX + Math.cos(perpAngle) * bladeTipWidth;
+                const tipLeftY = bladeTipY + Math.sin(perpAngle) * bladeTipWidth;
+                const tipRightX = bladeTipX - Math.cos(perpAngle) * bladeTipWidth;
+                const tipRightY = bladeTipY - Math.sin(perpAngle) * bladeTipWidth;
+
+                // Apply curve (bend towards the back edge)
+                const curveX = -Math.sin(bladeAngle) * curveOffset;
+                const curveY = Math.cos(bladeAngle) * curveOffset;
+                const midCurveX = (bladeStartX + bladeTipX) / 2 + curveX;
+                const midCurveY = (bladeStartY + bladeTipY) / 2 + curveY;
+
+                // Blade gradient (metallic)
+                const bladeGrad = ctx.createLinearGradient(
+                    bladeStartX - Math.cos(perpAngle) * 4,
+                    bladeStartY - Math.sin(perpAngle) * 4,
+                    bladeStartX + Math.cos(perpAngle) * 4,
+                    bladeStartY + Math.sin(perpAngle) * 4
+                );
+                bladeGrad.addColorStop(0, '#d0d0d0');
+                bladeGrad.addColorStop(0.3, '#f5f5f5');
+                bladeGrad.addColorStop(0.5, '#ffffff');
+                bladeGrad.addColorStop(0.7, '#e0e0e0');
+                bladeGrad.addColorStop(1, '#a0a0a0');
+
+                ctx.fillStyle = bladeGrad;
+                ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.moveTo(baseLeftX, baseLeftY);
+                ctx.quadraticCurveTo(midCurveX + Math.cos(perpAngle) * curveOffset * 0.3,
+                    midCurveY + Math.sin(perpAngle) * curveOffset * 0.3,
+                    tipLeftX, tipLeftY);
+                ctx.lineTo(tipRightX, tipRightY);
+                ctx.quadraticCurveTo(midCurveX - Math.cos(perpAngle) * curveOffset * 0.3,
+                    midCurveY - Math.sin(perpAngle) * curveOffset * 0.3,
+                    baseRightX, baseRightY);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Blade edge highlight (hamon line)
+                ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+                ctx.lineWidth = 0.6;
+                ctx.beginPath();
+                const hamonStartX = bladeStartX + Math.cos(perpAngle) * 1.5;
+                const hamonStartY = bladeStartY + Math.sin(perpAngle) * 1.5;
+                const hamonTipX = bladeTipX + Math.cos(perpAngle) * 0.3;
+                const hamonTipY = bladeTipY + Math.sin(perpAngle) * 0.3;
+                const hamonMidX = (hamonStartX + hamonTipX) / 2 + curveX * 0.6;
+                const hamonMidY = (hamonStartY + hamonTipY) / 2 + curveY * 0.6;
+                ctx.moveTo(hamonStartX, hamonStartY);
+                ctx.quadraticCurveTo(hamonMidX, hamonMidY, hamonTipX, hamonTipY);
+                ctx.stroke();
+
+                // Blade tip shine
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.beginPath();
+                ctx.arc(bladeTipX, bladeTipY, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            function drawSlashTrails() {
+                if (trailPoints.length < 2) return;
+                ctx.save();
+                for (let i = 1; i < trailPoints.length; i++) {
+                    const t0 = trailPoints[i - 1];
+                    const t1 = trailPoints[i];
+                    const alpha = (t1.life / t1.maxLife) * 0.7;
+                    const width = (t1.life / t1.maxLife) * 5 + 1;
+                    ctx.strokeStyle = `rgba(200,220,255,${alpha})`;
+                    ctx.lineWidth = width;
+                    ctx.lineCap = 'round';
+                    ctx.shadowColor = `rgba(180,210,255,${alpha})`;
+                    ctx.shadowBlur = 8;
+                    ctx.beginPath();
+                    ctx.moveTo(t0.x, t0.y);
+                    ctx.lineTo(t1.x, t1.y);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            function drawAfterimages() {
+                for (const ai of afterimages) {
+                    const alpha = (ai.life / ai.maxLife) * 0.35;
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = '#aaccff';
+                    ctx.beginPath();
+                    ctx.arc(ai.x + shakeX, ai.y + shakeY, player.radius * 0.9, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Small blade hint
+                    const btx = ai.x + shakeX + Math.cos(ai.angle) * player.bladeLength;
+                    const bty = ai.y + shakeY + Math.sin(ai.angle) * player.bladeLength;
+                    ctx.strokeStyle = '#aaccff';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(ai.x + shakeX, ai.y + shakeY);
+                    ctx.lineTo(btx, bty);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+
+            function drawEnemies() {
+                for (const enemy of enemies) {
+                    if (enemy.hp <= 0) continue;
+                    ctx.save();
+                    const ex = enemy.x + shakeX;
+                    const ey = enemy.y + shakeY;
+
+                    // Flash on hit
+                    let color = enemy.color;
+                    if (enemy.hitFlash > 0) {
+                        color = '#ffffff';
+                    }
+
+                    // Shadow
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    ctx.beginPath();
+                    ctx.arc(ex + 2, ey + 2, enemy.radius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Body
+                    const bodyGrad = ctx.createRadialGradient(ex, ey, enemy.radius * 0.2, ex, ey, enemy.radius);
+                    bodyGrad.addColorStop(0, color);
+                    bodyGrad.addColorStop(1, '#1a0000');
+                    ctx.fillStyle = bodyGrad;
+                    ctx.beginPath();
+                    ctx.arc(ex, ey, enemy.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(255,100,100,0.4)';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    // Glowing eyes
+                    const eyeOffset = enemy.radius * 0.35;
+                    const angleToPlayer = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                    for (let s = -1; s <= 1; s += 2) {
+                        const eyeX = ex + Math.cos(angleToPlayer) * eyeOffset + Math.cos(angleToPlayer + Math.PI / 2) *
+                            s * enemy.radius * 0.4;
+                        const eyeY = ey + Math.sin(angleToPlayer) * eyeOffset + Math.sin(angleToPlayer + Math.PI / 2) *
+                            s * enemy.radius * 0.4;
+                        ctx.fillStyle = '#ff3333';
+                        ctx.shadowColor = '#ff0000';
+                        ctx.shadowBlur = 6;
+                        ctx.beginPath();
+                        ctx.arc(eyeX, eyeY, enemy.radius * 0.25, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                    }
+
+                    // HP indicator for brutes
+                    if (enemy.maxHp >= 3 && enemy.hp < enemy.maxHp) {
+                        const hpRatio = enemy.hp / enemy.maxHp;
+                        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                        ctx.fillRect(ex - enemy.radius, ey - enemy.radius - 10, enemy.radius * 2, 4);
+                        ctx.fillStyle = hpRatio > 0.5 ? '#ff6666' : '#ff0000';
+                        ctx.fillRect(ex - enemy.radius, ey - enemy.radius - 10, enemy.radius * 2 * hpRatio, 4);
+                    }
+
+                    ctx.restore();
+                }
+            }
+
+            function drawParticles() {
+                for (const p of particles) {
+                    const alpha = p.life / p.maxLife;
+                    if (p.isText) {
+                        ctx.fillStyle = `rgba(255,215,0,${alpha})`;
+                        ctx.font = 'bold 16px "Courier New", monospace';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(p.text, p.x + shakeX, p.y + shakeY);
+                    } else {
+                        ctx.fillStyle = p.color.replace(')', `,${alpha})`).replace('rgb',
+                            'rgba');
+                        if (p.color.startsWith('#')) {
+                            const hex = p.color;
+                            const r = parseInt(hex.slice(1, 3), 16);
+                            const g = parseInt(hex.slice(3, 5), 16);
+                            const b = parseInt(hex.slice(5, 7), 16);
+                            ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+                        }
+                        ctx.beginPath();
+                        ctx.arc(p.x + shakeX, p.y + shakeY, p.size, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+
+            function drawUI() {
+                // Crosshair
+                const crossSize = 12;
+                const crossGap = 7;
+                ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = 'rgba(255,255,255,0.4)';
+                ctx.shadowBlur = 4;
+                ctx.beginPath();
+                ctx.moveTo(mouseX - crossSize, mouseY);
+                ctx.lineTo(mouseX - crossGap, mouseY);
+                ctx.moveTo(mouseX + crossGap, mouseY);
+                ctx.lineTo(mouseX + crossSize, mouseY);
+                ctx.moveTo(mouseX, mouseY - crossSize);
+                ctx.lineTo(mouseX, mouseY - crossGap);
+                ctx.moveTo(mouseX, mouseY + crossGap);
+                ctx.lineTo(mouseX, mouseY + crossSize);
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.arc(mouseX, mouseY, 3, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Dash cooldown ring around player
+                if (player.dashCooldown > 0 && !player.dashActive) {
+                    const cdRatio = player.dashCooldown / player.dashCooldownMax;
+                    ctx.strokeStyle = 'rgba(100,180,255,0.5)';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(player.x + shakeX, player.y + shakeY, player.radius + 12, -Math.PI / 2, -Math.PI / 2 + Math.PI *
+                        2 * (1 - cdRatio));
+                    ctx.stroke();
+                }
+                if (player.dashCooldown <= 0 && !player.dashActive) {
+                    ctx.strokeStyle = 'rgba(100,200,255,0.3)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.arc(player.x + shakeX, player.y + shakeY, player.radius + 12, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                // Game over screen
+                if (gameOver) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.fillRect(0, 0, W, H);
+                    ctx.fillStyle = '#ff2222';
+                    ctx.font = 'bold 48px "Courier New", monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '18px "Courier New", monospace';
+                    ctx.fillText(`Score: ${gameScore}  |  Wave: ${waveNumber}`, W / 2, H / 2 + 30);
+                    ctx.fillText('Click or press R to restart', W / 2, H / 2 + 60);
+                    ctx.textAlign = 'start';
+                }
+            }
+
+            function render() {
+                ctx.clearRect(0, 0, W, H);
+                drawFloor();
+                drawAfterimages();
+                drawSlashTrails();
+                drawEnemies();
+                drawParticles();
+                drawPlayer();
+                drawUI();
+
+                // Vignette
+                const vignetteGrad = ctx.createRadialGradient(W / 2, H / 2, W * 0.55, W / 2, H / 2, W * 0.85);
+                vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
+                vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
+                ctx.fillStyle = vignetteGrad;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            function gameLoop(timestamp) {
+                let dt = (timestamp - lastTime) / 1000;
+                if (dt <= 0) dt = 0.016;
+                if (dt > 0.2) dt = 0.2; // Cap to prevent spiral
+                lastTime = timestamp;
+
+                update(dt);
+                render();
+                requestAnimationFrame(gameLoop);
+            }
+
+            // --- Initialize ---
+            function init() {
+                resetPlayer();
+                player.x = W / 2;
+                player.y = H / 2;
+                gameScore = 0;
+                gameOver = false;
+                enemies.length = 0;
+                particles.length = 0;
+                trailPoints.length = 0;
+                afterimages.length = 0;
+                startWave(1);
+                updateUI();
+            }
+
+            init();
+
+            // Handle restart key
+            window.addEventListener('keydown', function restartHandler(e) {
+                if (e.key.toLowerCase() === 'r' && gameOver) {
+                    restartGame();
+                }
+            });
+
+            // Start game loop
+            requestAnimationFrame(gameLoop);
+
+            console.log('%c⚔️ Katana Slasher Ready %c| %cWASD move | Mouse aim | Left Click slash | Right Click/Shift dash',
+                'font-size:18px;color:#ff4444;',
+                '',
+                'color:#aaa;');
+            console.log('%cChain slashes for combos! Slash trails show your blade path.',
+            'color:#ffd700;font-style:italic;');
+            console.log('%cAnimation principles sourced from katana combat studies & iaido techniques.',
+            'color:#888;font-size:10px;');
+        })();
+    </script>
+</body>
+</html>
